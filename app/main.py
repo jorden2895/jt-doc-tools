@@ -14,7 +14,7 @@ from .core.job_manager import job_manager
 from .logging_setup import get_logger, setup_logging
 from .tool_registry import discover_tools, mount_tools
 
-VERSION = "1.10.1"
+VERSION = "1.11.4"
 
 setup_logging("DEBUG" if settings.debug else "INFO")
 logger = get_logger(__name__)
@@ -115,6 +115,7 @@ _TOOL_ALIASES = {
     "pdf-extract-images": "extract images pictures jpg png assets 擷取 提取 圖片 影像 抽圖",
     "pdf-to-image":       "convert image images png jpg jpeg raster rasterize export office word excel powerpoint docx xlsx pptx odt ods odp 文書轉圖片 轉圖 轉圖片 轉png 轉成圖片 影像 匯出圖片 Word 轉圖 Excel 轉圖 PPT 轉圖",
     "image-to-pdf":       "image images photos jpg jpeg png gif tiff webp heic combine merge convert scan a4 letter page size rotate reorder 圖片 照片 相片 掃描 轉 PDF 合併 排序 旋轉 頁面大小 A4",
+    "scan-merge":         "scan merge combine composite id card front back two sided id-card overlay position place a4 white background crop detect color photo png jpg pdf 掃描 拼合 合併 疊合 證件 身分證 身份證 正面 反面 正反面 雙面 護照 駕照 健保卡 名片 同一張 白底 A4 位置 自動偵測 彩色 去背 淨白 拖曳",
     "pdf-editor":         "editor edit annotate annotation whiteout redact text textbox shape pencil draw highlight sticky note scribus 編輯 編輯器 標註 註記 塗黑 遮蓋 手繪 螢光筆 便箋 文字框 修圖",
     "pdf-extract-text":   "extract text content txt markdown md docx word odt reflow paragraph ocr llm 擷取文字 取出文字 轉文字 轉 word 轉 markdown 段落重排 LLM 重排",
     "pdf-ocr":            "ocr searchable scan image text layer invisible tesseract chi_tra chi_sim eng apple preview live text macos 文字層 補建 掃描 圖檔 變可選 可搜尋 透明文字層 蘋果 預覽程式 LiveText 圖轉文字",
@@ -699,10 +700,18 @@ async def _api_token_gate(request: Request, call_next):
     # or admin (admin is browser-based and has its own access control).
     # Cover both root-level `/api/*` and tool-prefixed `/tools/<x>/api/*`
     # + `/tools/<x>/convert` — both是外部 API 介面。
+    # pdf-to-office 的轉換前後對照縮圖 / 改善報告同時被「瀏覽器（session）」與
+    # 「API 呼叫者（Bearer token）」使用，屬雙重存取路徑：帶 Bearer 就驗 token，
+    # 沒帶就落回 session auth_gate（避免在 enforce 開時誤擋瀏覽器預覽）。
+    is_dual_access = (
+        "/pdf-to-office/preview/" in path
+        or "/pdf-to-office/report/" in path
+    )
     is_api = (
         path.startswith("/api/")
         or "/api/" in path  # tool-prefixed e.g. /tools/pdf-rotate/api/pdf-rotate
         or path.endswith("/convert")  # pdf-to-image / pdf-to-office
+        or is_dual_access
     )
     if not is_api:
         return await call_next(request)
@@ -712,19 +721,22 @@ async def _api_token_gate(request: Request, call_next):
     auth_hdr = request.headers.get("Authorization") or ""
     presented = None
     if auth_hdr.lower().startswith("bearer "):
-        presented = auth_hdr.split(None, 1)[1].strip()
+        parts = auth_hdr.split(None, 1)
+        presented = parts[1].strip() if len(parts) > 1 else None
     if not presented:
         presented = request.query_params.get("token")
     has_bearer_attempt = bool(presented)
-    if not enforce and not has_bearer_attempt:
-        # 沒帶 token 且 enforce 關 → 維持舊行為（API 公開）
+    if not has_bearer_attempt and (not enforce or is_dual_access):
+        # 沒帶 token 時：enforce 關 → 維持舊行為（API 公開）；
+        # 雙重存取路徑 → 落回 session auth_gate 由瀏覽器 cookie 把關。
         return await call_next(request)
 
     # Accept: Authorization: Bearer <token>  OR  ?token=<token>
     auth = request.headers.get("Authorization") or ""
     presented = None
     if auth.lower().startswith("bearer "):
-        presented = auth.split(None, 1)[1].strip()
+        parts = auth.split(None, 1)
+        presented = parts[1].strip() if len(parts) > 1 else None
     if not presented:
         presented = request.query_params.get("token")
 

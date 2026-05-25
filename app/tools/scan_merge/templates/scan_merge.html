@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% from "components/icons.html" import icon %}
+{% block title %}掃描拼合 · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>{{ icon('credit-card', size=22) }} 掃描拼合</h1>
+<p class="muted">事務機分次掃描證件正、反面會產生多個檔，內容各落在 A4 不同位置。拉入這些掃描，系統自動抓出每張「有內容的區塊」、保留原彩色，依原位置疊到同一張 A4 白底；可拖曳微調再產生 PDF。</p>
+
+<details class="panel" id="upload-panel" open>
+  <summary>上傳掃描檔 <span class="muted" id="upload-count" style="font-weight:normal; font-size:12px; margin-left:6px;"></span></summary>
+  <div class="file-upload" id="dropZone">
+    <label class="drop-zone" for="fileInput">
+      <div class="drop-zone-inner">
+        <div class="drop-zone-icon">📤</div>
+        <div class="drop-zone-text">拖曳檔案到此，或點選挑選</div>
+        <div class="drop-zone-hint">證件正反面等多張掃描，可一次選多個、上傳後可繼續加。單檔上限 50 MB；本機處理，暫存自動清除、預設不留紀錄。</div>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf,image/*,.tif,.tiff" multiple />
+    </label>
+    <div id="upload-list" class="sm-uploadList" hidden></div>
+  </div>
+</details>
+
+<details class="panel" id="stage-panel" hidden open>
+  <summary>預覽與微調 <span class="muted" id="stage-info" style="font-weight:normal; font-size:12px; margin-left:6px;">—</span></summary>
+  <div class="sm-toolbar">
+    <span style="flex:1;"></span>
+    <label class="sm-check" title="掃描常會帶一層淡灰 / 微黃的底色；勾選後把這層底色淨化成純白，不影響任何彩色內容">
+      <input type="checkbox" id="whitenToggle"> 去除掃描灰底
+    </label>
+  </div>
+
+  <!-- 橫式動作列：輸出檔名 + 產生 + 下載，放預覽上方，不佔右側空間 -->
+  <div class="sm-actionbar">
+    <div class="sm-field">
+      <label for="outName">輸出檔名</label>
+      <input type="text" id="outName" value="scan-merge.pdf" class="sm-outname">
+    </div>
+    <button class="btn btn-primary" id="btn-generate">{{ icon('save') }} 產生合併結果</button>
+  </div>
+  <div class="sm-jp-wrap">
+    {% with progress_id='jp' %}{% include "components/job_progress.html" %}{% endwith %}
+  </div>
+
+  <div id="overlap-warn" class="sm-warn" hidden>
+    {{ icon('info', size=14) }} 有內容區塊互相重疊（紅框標示）。已保留原掃描位置；若不想重疊，請拖曳錯開。
+  </div>
+
+  <p class="sm-help">{{ icon('info', size=14) }} 系統已依原掃描位置自動擺放各張內容。<b>點選任一張</b>即可拖曳移動、用右下角控點調整大小；重疊時(紅框)拖曳錯開即可。完成後按「產生合併結果」下載。</p>
+
+  <div class="sm-zoombar">
+    <button type="button" class="btn btn-small sm-zbtn" id="zoom-out" title="縮小">−</button>
+    <input type="range" id="zoom-range" class="sm-zoom-range" min="40" max="300" step="5" value="100" title="拖曳調整縮放" aria-label="縮放比例">
+    <button type="button" class="btn btn-small sm-zbtn" id="zoom-in" title="放大">+</button>
+    <span id="zoom-label" class="sm-zoom-label">100%</span>
+    <button type="button" class="btn btn-small" id="zoom-fit" title="整張完整顯示在可見範圍">{{ icon('aspect-ratio', size=14) }} 符合</button>
+    <span style="flex:1;"></span>
+    <button type="button" class="btn btn-small" id="btn-preview-toggle" title="隱藏選取框，預覽實際輸出結果">{{ icon('eye', size=14) }} 預覽結果</button>
+  </div>
+  <div class="sm-stage-scroll">
+    <div id="stage-busy" class="sm-busy" hidden>
+      <span class="sm-spinner"></span>
+      <span id="stage-busy-msg">處理中…</span>
+    </div>
+    <div id="stage" class="sm-stage" aria-label="A4 預覽，可拖曳每塊內容"></div>
+  </div>
+</details>
+
+<style>
+.sm-toolbar { display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+.sm-check { font-size:13px; color:#334155; display:inline-flex; align-items:center; gap:6px; cursor:pointer; user-select:none; }
+.sm-warn { background:#fef2f2; border:1px solid #fecaca; color:#b91c1c; border-radius:8px;
+  padding:8px 12px; font-size:13px; margin-bottom:10px; }
+.sm-warn svg { vertical-align:-2px; margin-right:2px; }
+
+/* 橫式動作列（輸出檔名 + 產生 + 下載），放預覽上方 */
+.sm-actionbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;
+  background:#f8fafc; border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+.sm-field { display:flex; align-items:center; gap:8px; }
+.sm-field label { font-size:13px; color:#334155; white-space:nowrap; }
+.sm-outname { width:240px; max-width:52vw; padding:7px 10px; font-size:13px;
+  border:1px solid var(--border); border-radius:6px; background:#fff; }
+.sm-outname:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px rgba(59,130,246,0.15); }
+.sm-jp-wrap .job-progress { margin:0 0 10px; }
+
+/* 預覽上方說明 */
+.sm-help { font-size:12.5px; color:#475569; background:#eff6ff; border:1px solid #dbeafe;
+  border-radius:8px; padding:8px 12px; margin:0 0 10px; line-height:1.6; }
+.sm-help svg { vertical-align:-2px; margin-right:2px; color:#3b82f6; }
+
+/* 縮放 −／＋ 用清楚的符號鈕 */
+.sm-zbtn { font-size:16px; font-weight:600; line-height:1; min-width:30px; padding:3px 8px; }
+
+/* 縮放工具列 */
+.sm-zoombar { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.sm-zoombar .btn { min-width:30px; padding:4px 8px; }
+.sm-zoom-label { font-size:12px; color:#475569; min-width:46px; text-align:center; font-variant-numeric:tabular-nums; }
+
+/* 可捲動的預覽容器：灰底襯出白色 A4 */
+.sm-stage-scroll { position:relative; overflow:auto; max-height:78vh; background:#f1f5f9;
+  border:1px solid var(--border); border-radius:8px; padding:16px; text-align:center; min-height:160px; }
+
+/* 處理中 spinner 覆蓋層 */
+.sm-busy { position:absolute; inset:0; z-index:10; display:flex; align-items:center; justify-content:center;
+  gap:10px; background:rgba(241,245,249,0.88); font-size:14px; color:#475569; }
+.sm-spinner { width:22px; height:22px; border:3px solid #cbd5e1; border-right-color:var(--primary);
+  border-radius:50%; animation:spin .7s linear infinite; flex:0 0 auto; }
+
+/* A4 直式舞台：比例 1:√2，寬度由縮放控制 */
+.sm-stage { position:relative; display:inline-block; vertical-align:top;
+  width:460px; aspect-ratio:595.276 / 841.890;
+  background:#fff; border:1px solid var(--border); box-shadow:0 2px 10px rgba(0,0,0,0.12);
+  overflow:hidden; touch-action:none; }
+
+.sm-item { position:absolute; box-sizing:border-box; cursor:grab; user-select:none;
+  border:1px solid transparent; }
+.sm-item img { width:100%; height:100%; display:block; pointer-events:none; }
+.sm-item.selected { border-color:var(--primary); box-shadow:0 0 0 2px rgba(59,130,246,0.35); }
+.sm-item.overlap { border-color:#dc2626; box-shadow:0 0 0 2px rgba(220,38,38,0.4); }
+.sm-item.dragging { cursor:grabbing; opacity:0.92; }
+/* 預覽結果：隱藏所有選取框 / 控點 / 刪除鈕，看乾淨輸出 */
+.sm-stage.preview-mode .sm-item { border-color:transparent !important; box-shadow:none !important; pointer-events:none; }
+.sm-stage.preview-mode .sm-del, .sm-stage.preview-mode .sm-resize { display:none !important; }
+.btn.is-active { background:var(--primary); color:#fff; border-color:var(--primary); }
+/* X 刪除鈕 / 縮放控點：只有被選中的物件才顯示 */
+.sm-item .sm-del { position:absolute; top:-9px; right:-9px; width:20px; height:20px; border-radius:50%;
+  background:rgba(220,38,38,0.95); color:#fff; border:none; cursor:pointer; font-size:12px; line-height:1;
+  display:none; align-items:center; justify-content:center; z-index:6; box-shadow:0 1px 3px rgba(0,0,0,0.3); }
+.sm-item .sm-resize { position:absolute; right:-7px; bottom:-7px; width:16px; height:16px; border-radius:3px;
+  background:var(--primary); border:2px solid #fff; cursor:nwse-resize; z-index:6; box-shadow:0 1px 3px rgba(0,0,0,0.3);
+  display:none; }
+.sm-item.selected .sm-del { display:flex; }
+.sm-item.selected .sm-resize { display:block; }
+
+/* 上傳檔名清單 */
+.sm-uploadList { margin-top:10px; display:flex; flex-direction:column; gap:5px; }
+.sm-upfile { display:flex; align-items:center; gap:8px; font-size:13px; color:#334155;
+  background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:6px 10px; }
+.sm-upfile svg { flex:0 0 auto; color:#64748b; }
+.sm-upfile .sm-upname { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sm-upfile .sm-upcount { color:#94a3b8; font-size:12px; }
+
+/* 縮放拉桿 */
+.sm-zoom-range { width:120px; max-width:34vw; accent-color:var(--primary); cursor:pointer; }
+
+.sm-cropList { display:flex; flex-direction:column; gap:6px; max-height:260px; overflow:auto; }
+.sm-chip { display:flex; align-items:center; gap:8px; font-size:12px; color:#475569;
+  background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:5px 8px; cursor:pointer; }
+.sm-chip.selected { border-color:var(--primary); background:#eff6ff; }
+.sm-chip .sm-chip-th { width:34px; height:24px; object-fit:contain; background:#fff; border:1px solid #e5e7eb; border-radius:3px; flex:0 0 auto; }
+.sm-chip .sm-chip-name { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+@keyframes spin { to { transform:rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/job_progress.js"></script>
+<script>
+// crops: [{crop_id, filename, page, natural_w, natural_h, url_raw, url_white, x, y, w, h}]
+// x/y/w/h 都是 A4 的 0..1 比例。
+let crops = [];
+let selectedId = null;
+const A4_W = 595.276, A4_H = 841.890;
+const A4_RATIO = A4_W / A4_H;  // 寬/高
+const FILE_ICON = `{{ icon('file-text', size=16) }}`;
+
+const dz = document.getElementById('dropZone');
+const fi = document.getElementById('fileInput');
+const stage = document.getElementById('stage');
+
+// ---- 預覽縮放 ----
+let zoom = 1.0;
+const BASE_W = 460;  // 100% 時的舞台寬（px）
+const zoomRange = document.getElementById('zoom-range');
+function applyZoom() {
+  zoom = Math.max(0.4, Math.min(3, zoom));
+  stage.style.width = Math.round(BASE_W * zoom) + 'px';
+  document.getElementById('zoom-label').textContent = Math.round(zoom * 100) + '%';
+  zoomRange.value = Math.round(zoom * 100);
+}
+document.getElementById('zoom-in').addEventListener('click', () => {
+  zoom = Math.round((zoom + 0.25) * 100) / 100; applyZoom();
+});
+document.getElementById('zoom-out').addEventListener('click', () => {
+  zoom = Math.round((zoom - 0.25) * 100) / 100; applyZoom();
+});
+document.getElementById('zoom-fit').addEventListener('click', () => {
+  // 讓整張 A4 在可見範圍內完整顯示（同時符合寬與高，不只拉滿寬度）
+  const scroll = document.querySelector('.sm-stage-scroll');
+  const pad = 34;
+  const availW = scroll.clientWidth - pad;
+  const availH = Math.max(160, window.innerHeight * 0.78 - pad);  // 對應 max-height:78vh
+  const fitW = availW / BASE_W;
+  const fitH = availH / (BASE_W * (A4_H / A4_W));
+  zoom = Math.min(fitW, fitH); applyZoom();
+});
+zoomRange.addEventListener('input', () => { zoom = zoomRange.value / 100; applyZoom(); });
+applyZoom();
+
+const dzZone = dz.querySelector('.drop-zone');  // label：點擊自動開檔
+['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, (e) => {
+  e.preventDefault(); e.stopPropagation(); dzZone.classList.add('dragover');
+}));
+['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, (e) => {
+  e.preventDefault(); e.stopPropagation(); dzZone.classList.remove('dragover');
+}));
+dz.addEventListener('drop', (e) => uploadFiles(e.dataTransfer.files));
+fi.addEventListener('change', (e) => uploadFiles(e.target.files));
+
+function escapeHtml(s) {
+  return String(s || '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function uploadFiles(fileList) {
+  if (!fileList || !fileList.length) return;
+  document.getElementById('stage-panel').hidden = false;
+  const busy = document.getElementById('stage-busy');
+  const busyMsg = document.getElementById('stage-busy-msg');
+  busy.hidden = false;
+  try {
+    const arr = Array.from(fileList);
+    for (let i = 0; i < arr.length; i++) {
+      busyMsg.textContent = arr.length > 1
+        ? `處理中（${i + 1}/${arr.length}）：${arr[i].name} …`
+        : `處理中：${arr[i].name} …`;
+      await uploadOne(arr[i]);
+    }
+  } finally {
+    busy.hidden = true;
+    fi.value = '';
+  }
+}
+
+async function uploadOne(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  document.getElementById('stage-info').textContent = '處理中：' + file.name + ' …';
+  try {
+    const r = await fetch('/tools/scan-merge/upload', {method: 'POST', body: fd});
+    if (!r.ok) { alert('上傳失敗：' + file.name + ' — ' + await r.text()); return; }
+    const j = await r.json();
+    for (const c of (j.crops || [])) {
+      // 由 source 相對座標推 A4 擺位；高度依 crop 真實比例算（不變形）
+      const w = Math.min(0.98, c.fw);
+      const aspect = c.natural_h / Math.max(1, c.natural_w);  // h/w of the crop
+      const h = w * A4_RATIO * aspect;  // 換成 A4 高度比例
+      crops.push({
+        crop_id: c.crop_id, filename: c.filename, page: c.page,
+        natural_w: c.natural_w, natural_h: c.natural_h,
+        url_raw: c.url_raw, url_white: c.url_white,
+        x: Math.max(0, Math.min(1 - w, c.fx)),
+        y: Math.max(0, Math.min(1 - Math.min(h, 1), c.fy)),
+        w: w, h: Math.min(h, 1),
+      });
+    }
+    render();
+  } catch (e) {
+    alert('上傳錯誤：' + file.name + ' — ' + e.message);
+  }
+}
+
+function whitenOn() { return document.getElementById('whitenToggle').checked; }
+function cropSrc(c) { return whitenOn() ? c.url_white : c.url_raw; }
+
+function rectsOverlap(a, b) {
+  return !(a.x + a.w <= b.x || b.x + b.w <= a.x ||
+           a.y + a.h <= b.y || b.y + b.h <= a.y);
+}
+
+function computeOverlaps() {
+  const over = new Set();
+  for (let i = 0; i < crops.length; i++)
+    for (let j = i + 1; j < crops.length; j++)
+      if (rectsOverlap(crops[i], crops[j])) { over.add(crops[i].crop_id); over.add(crops[j].crop_id); }
+  return over;
+}
+
+function render() {
+  const over = computeOverlaps();
+  document.getElementById('overlap-warn').hidden = over.size === 0;
+  document.getElementById('stage-info').textContent = `共 ${crops.length} 塊內容`;
+  // stage items
+  stage.innerHTML = crops.map(c => {
+    const cls = 'sm-item' + (c.crop_id === selectedId ? ' selected' : '') +
+                (over.has(c.crop_id) ? ' overlap' : '');
+    return `<div class="${cls}" data-id="${c.crop_id}"
+      style="left:${c.x*100}%;top:${c.y*100}%;width:${c.w*100}%;height:${c.h*100}%;">
+      <img src="${cropSrc(c)}" alt="${escapeHtml(c.filename)}">
+      <button type="button" class="sm-del" data-act="del" title="移除這塊">×</button>
+      <span class="sm-resize" data-act="resize"></span>
+    </div>`;
+  }).join('');
+  // 上傳檔名清單（顯示在上傳區內）：依檔名聚合塊數
+  const byFile = new Map();
+  crops.forEach(c => byFile.set(c.filename, (byFile.get(c.filename) || 0) + 1));
+  const ul = document.getElementById('upload-list');
+  ul.hidden = byFile.size === 0;
+  ul.innerHTML = [...byFile].map(([name, n]) =>
+    `<div class="sm-upfile">${FILE_ICON}<span class="sm-upname">${escapeHtml(name)}</span><span class="sm-upcount">${n} 塊</span></div>`
+  ).join('');
+  document.getElementById('upload-count').textContent =
+    byFile.size ? `已載入 ${byFile.size} 個檔、${crops.length} 塊` : '';
+}
+
+function findCrop(id) { return crops.find(c => c.crop_id === id); }
+
+// ---- 拖曳移動 / 縮放（pointer events，桌機 + 觸控通用）----
+let drag = null;  // {id, mode:'move'|'resize', startX, startY, orig{x,y,w,h}, rect}
+stage.addEventListener('pointerdown', (e) => {
+  const item = e.target.closest('.sm-item');
+  if (!item) {
+    // 點到紙張空白處 → 取消選取
+    if (selectedId !== null) { selectedId = null; render(); }
+    return;
+  }
+  const id = item.dataset.id;
+  selectedId = id;
+  const act = e.target.dataset.act;
+  if (act === 'del') {
+    removeCrop(id);
+    return;
+  }
+  const c = findCrop(id);
+  if (!c) return;
+  const mode = act === 'resize' ? 'resize' : 'move';
+  const rect = stage.getBoundingClientRect();
+  drag = { id, mode, startX: e.clientX, startY: e.clientY,
+           orig: { x: c.x, y: c.y, w: c.w, h: c.h }, rect };
+  item.classList.add('dragging');
+  item.setPointerCapture(e.pointerId);
+  render();
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const c = findCrop(drag.id);
+  if (!c) return;
+  const dxf = (e.clientX - drag.startX) / drag.rect.width;
+  const dyf = (e.clientY - drag.startY) / drag.rect.height;
+  if (drag.mode === 'move') {
+    c.x = Math.max(0, Math.min(1 - c.w, drag.orig.x + dxf));
+    c.y = Math.max(0, Math.min(1 - c.h, drag.orig.y + dyf));
+  } else {
+    // 等比縮放：用寬度變化驅動，高度依 crop 比例保持
+    let nw = Math.max(0.05, Math.min(1 - c.x, drag.orig.w + dxf));
+    const aspect = c.natural_h / Math.max(1, c.natural_w);
+    let nh = nw * A4_RATIO * aspect;
+    if (c.y + nh > 1) { nh = 1 - c.y; nw = nh / (A4_RATIO * aspect); }
+    c.w = nw; c.h = nh;
+  }
+  // 即時更新該元素 style，避免整頁 re-render 卡頓
+  const el = stage.querySelector(`.sm-item[data-id="${drag.id}"]`);
+  if (el) { el.style.left = c.x*100+'%'; el.style.top = c.y*100+'%';
+            el.style.width = c.w*100+'%'; el.style.height = c.h*100+'%'; }
+});
+function endDrag(e) {
+  if (!drag) return;
+  drag = null;
+  render();
+}
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+
+async function removeCrop(id) {
+  crops = crops.filter(c => c.crop_id !== id);
+  if (selectedId === id) selectedId = null;
+  fetch('/tools/scan-merge/delete/' + id, {method: 'POST'}).catch(() => {});
+  render();
+}
+
+document.getElementById('whitenToggle').addEventListener('change', render);
+
+// 預覽結果：隱藏所有選取框 / 控點，看乾淨輸出
+let previewMode = false;
+document.getElementById('btn-preview-toggle').addEventListener('click', (e) => {
+  previewMode = !previewMode;
+  stage.classList.toggle('preview-mode', previewMode);
+  const btn = e.target.closest('button');
+  btn.classList.toggle('is-active', previewMode);
+  btn.innerHTML = previewMode
+    ? '{{ icon("eye-off", size=14) }} 結束預覽'
+    : '{{ icon("eye", size=14) }} 預覽結果';
+});
+
+const jp = new JobProgress(document.getElementById('jp'));
+
+document.getElementById('btn-generate').addEventListener('click', async () => {
+  if (!crops.length) { alert('請先上傳掃描檔'); return; }
+  const body = {
+    items: crops.map(c => ({ crop_id: c.crop_id, x: c.x, y: c.y, w: c.w, h: c.h })),
+    whiten: whitenOn(),
+    filename: document.getElementById('outName').value || 'scan-merge.pdf',
+  };
+  const btn = document.getElementById('btn-generate');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:12px;height:12px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:6px;"></span>送出中…';
+  try {
+    const r = await fetch('/tools/scan-merge/generate', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) { alert('產生失敗：' + await r.text()); return; }
+    const j = await r.json();
+    jp.track(j.job_id);
+  } finally {
+    btn.disabled = false; btn.innerHTML = orig;
+  }
+});
+</script>
+{% endblock %}

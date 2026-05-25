@@ -34,7 +34,7 @@ _NON_ADMIN_TOOL_IDS = [
     "pdf-merge", "pdf-split", "pdf-rotate", "pdf-pages", "pdf-pageno",
     "pdf-nup", "pdf-compress", "pdf-watermark",
     "pdf-extract-text", "pdf-extract-images", "pdf-attachments",
-    "office-to-pdf", "pdf-to-image", "image-to-pdf",
+    "office-to-pdf", "pdf-to-image", "image-to-pdf", "scan-merge",
     "pdf-encrypt", "pdf-decrypt", "pdf-metadata",
     "pdf-hidden-scan", "doc-diff", "text-diff", "doc-deident", "text-deident",
     "pdf-editor", "translate-doc", "pdf-ocr", "text-list", "einvoice-scan",
@@ -71,7 +71,7 @@ SEED_ROLES: list[dict] = [
             "pdf-extract-text", "pdf-extract-images", "pdf-attachments",
             "pdf-merge", "pdf-split", "pdf-pages", "pdf-rotate", "pdf-pageno",
             "pdf-nup", "pdf-compress", "office-to-pdf", "pdf-to-image",
-            "image-to-pdf", "pdf-to-office",
+            "image-to-pdf", "scan-merge", "pdf-to-office",
         ],
     },
     {

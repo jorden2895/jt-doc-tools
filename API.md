@@ -124,6 +124,30 @@ curl -X POST http://localhost:8765/tools/image-to-pdf/api/image-to-pdf \
 
 回應：PDF 二進位。
 
+### 掃描拼合
+
+把多張掃描（如證件正、反面）中「有內容的區塊」自動偵測出來、保留原彩色，依其在原掃描中的相對位置合成到同一張 A4 白底 PDF。重疊時保留原位置不自動重排（需拖曳微調請改用網頁介面）。
+
+```text
+POST /tools/scan-merge/api/scan-merge
+```
+
+| 參數 | 類型 | 必填 | 說明 |
+|---|---|---|---|
+| `files` | file（可多個） | ✓ | 掃描檔，PDF / PNG / JPG / TIFF / WebP，各含一塊內容 |
+| `whiten` | bool | | 是否把淡灰 / 微黃的掃描底色提亮成純白（不影響彩色內容），預設 `true` |
+| `filename` | str | | 輸出檔名，預設 `scan-merge.pdf` |
+
+```bash
+curl -X POST http://localhost:8765/tools/scan-merge/api/scan-merge \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "files=@id-front.jpg" -F "files=@id-back.jpg" \
+  -F "whiten=true" \
+  --output id-merged.pdf
+```
+
+回應：單張 A4 白底 PDF 二進位。
+
 ### PDF 轉圖片
 
 把 PDF 每頁轉成 PNG（多頁自動打包 ZIP）。
@@ -158,17 +182,47 @@ POST /tools/pdf-to-office/convert
 |---|---|---|---|
 | `file` | file | ✓ | PDF |
 | `output_format` | str | | `docx`（預設）/ `odt` |
-| `enable_postprocess` | bool | | 是否套 jtdt-refine 後處理，預設 `false` |
+| `engine` | str | | 轉換引擎：`pdf2docx-refine`（預設，穩定）/ `jtdt-reform`（自家版面重組） |
+| `enable_postprocess` | bool | | 僅 `pdf2docx-refine` 有效：是否套 jtdt-refine 後處理（25 fixer），預設 `false` |
 
 ```bash
+# 預設引擎 pdf2docx-refine
 curl -X POST http://localhost:8765/tools/pdf-to-office/convert \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -F "file=@form.pdf" -F "output_format=docx" \
   | jq
-# → {"job_id": "..."}；之後用第 10 章的 job API 取結果
+# → {"job_id": "...", "download_url": "/api/jobs/.../download"}
+
+# 改用自家 jtdt-reform 引擎
+curl -X POST http://localhost:8765/tools/pdf-to-office/convert \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@form.pdf" -F "output_format=odt" -F "engine=jtdt-reform" \
+  | jq
 ```
 
-回應：`{"job_id": "..."}`（見第 10 章「Job 模式 API」）。
+回應：`{"job_id": "...", "download_url": "..."}`；之後用第 10 章的 job API 輪詢 + 取結果。
+
+**取得轉換前後對照縮圖**：job 完成後，`GET /api/jobs/{job_id}` 的 `meta.preview` 內含
+`page_indices`（要預覽的 0-based 頁碼清單，≤ 6 頁全取 / > 6 頁取前 2 + 中 2 + 後 2）、
+`orig_pages`、`result_pages`、`orig_chars`、`result_chars`。逐頁縮圖用：
+
+```text
+GET /tools/pdf-to-office/preview/{job_id}/orig/{page}     # 轉換前（原 PDF）
+GET /tools/pdf-to-office/preview/{job_id}/result/{page}   # 轉換後（docx/odt 渲染）
+```
+
+`page` 為 1-based 頁碼（對應 `page_indices` 元素 +1），回傳 `image/png`。
+
+```bash
+# 完成後讀 preview 頁碼清單
+curl -s http://localhost:8765/api/jobs/$JOB \
+  -H "Authorization: Bearer YOUR_TOKEN" | jq '.meta.preview'
+# 取第 1 頁的前 / 後對照縮圖
+curl -s http://localhost:8765/tools/pdf-to-office/preview/$JOB/orig/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" --output before_p1.png
+curl -s http://localhost:8765/tools/pdf-to-office/preview/$JOB/result/1 \
+  -H "Authorization: Bearer YOUR_TOKEN" --output after_p1.png
+```
 
 ---
 

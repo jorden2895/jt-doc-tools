@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from ...config import settings
@@ -355,11 +355,22 @@ _API_FORMAT_RE = re.compile(r"^(docx|odt)$", re.IGNORECASE)
 @router.post("/convert", include_in_schema=True)
 async def api_convert(request: Request,
                       file: UploadFile = File(...),
-                      output_format: str = "docx",
-                      enable_postprocess: bool = True):
-    """對外 API：單次上傳 PDF + return job_id。"""
+                      output_format: str = Form("docx"),
+                      engine: str = Form("pdf2docx-refine"),
+                      enable_postprocess: bool = Form(False)):
+    """對外 API：單次上傳 PDF + return job_id。
+
+    engine: "pdf2docx-refine"（預設，穩定）或 "jtdt-reform"（自家版面重組）。
+    enable_postprocess: 僅 pdf2docx-refine 有效，是否套 jtdt-refine 後處理（25 fixer）。
+    """
     if not _API_FORMAT_RE.match(output_format or ""):
         raise HTTPException(400, "output_format 必須是 docx 或 odt")
+    # engine 正規化（與 web UI /submit 一致），含舊 alias
+    engine = (engine or "pdf2docx-refine").strip()
+    if engine in ("jtdt-native", "jtreform"):
+        engine = "jtdt-reform"
+    if engine not in ("pdf2docx-refine", "jtdt-reform"):
+        engine = "pdf2docx-refine"
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "只支援 PDF 輸入")
     data = await file.read()
@@ -382,6 +393,7 @@ async def api_convert(request: Request,
         result = convert_pdf_to_office(
             src, work_dir, fmt,
             enable_postprocess=enable_postprocess,
+            engine=engine,
         )
         if not result.ok:
             raise RuntimeError(result.error or "轉換失敗")
@@ -393,9 +405,19 @@ async def api_convert(request: Request,
             shutil.move(str(result.output_path), str(dst))
         job.result_path = dst
         job.result_filename = dst_name
+        # 產出轉換前後對照縮圖（API 也可取用）— 透過
+        # GET /tools/pdf-to-office/preview/{job_id}/{orig|result}/{page} 取圖；
+        # 頁碼清單放在 job.meta["preview"]["page_indices"]（0-based）。
+        try:
+            preview_info = _generate_preview_pngs(src, dst, work_dir) or {}
+            if job.meta is not None:
+                job.meta["preview"] = preview_info
+        except Exception as e:
+            logger.warning("api preview png generation failed: %s", e)
         job.progress = 1.0
         job.message = "完成"
 
     job = job_manager.submit("pdf-to-office", run,
-                              meta={"filename": file.filename, "output_format": fmt})
+                              meta={"filename": file.filename, "output_format": fmt,
+                                    "engine": engine})
     return {"job_id": job.id, "download_url": f"/api/jobs/{job.id}/download"}

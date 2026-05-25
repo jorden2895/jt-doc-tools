@@ -89,3 +89,26 @@ def test_api_path_skips_auth_gate(admin_session):
     # If 401, that'd be from the API token gate when api_tokens.is_enforced(),
     # which is fine — auth gate did NOT redirect to /login.
     assert "/login" not in r.headers.get("location", "")
+
+
+def test_malformed_bearer_header_does_not_500():
+    """畸形 Authorization header（如只有 'Bearer' 沒 token）必須回乾淨的
+    401/404，不可因 split()[1] IndexError 變成 500（v1.10.2 修）。"""
+    c = TestClient(app_main.app, follow_redirects=False)
+    for bad in ("Bearer", "Bearer ", "bearer", "Bearer  "):
+        r = c.get("/api/jobs/nonexistent", headers={"Authorization": bad})
+        assert r.status_code != 500, f"header {bad!r} caused 500"
+        assert r.status_code in (401, 404)
+
+
+def test_pdf_to_office_preview_is_token_gated_api_surface(auth_off):
+    """pdf-to-office 的 preview / report 視為 API 介面 → 通過 token gate 後落到
+    路由（job 不存在回 404），不會被 session gate 導去 /login（v1.10.2）。"""
+    c = TestClient(app_main.app, follow_redirects=False)
+    for url in (
+        "/tools/pdf-to-office/preview/deadbeef/orig/1",
+        "/tools/pdf-to-office/report/deadbeef",
+    ):
+        r = c.get(url)
+        assert "/login" not in r.headers.get("location", ""), url
+        assert r.status_code != 302, url

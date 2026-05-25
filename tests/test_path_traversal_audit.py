@@ -50,6 +50,10 @@ KNOWN_SAFE_FUNCTIONS: set[str] = {
     "api_image_to_pdf",        # image_to_pdf: file = File(...), filename only used as stem
     "preview_watermarked",     # pdf_watermark: fresh File upload, generates own uuid
     "submit",                  # pdf_watermark: fresh File upload, generates own uuid
+    # scan_merge: fresh UploadFile only; on-disk path is a fixed "scan-merge.pdf"
+    # under a uuid4 dir, the user `filename` is stripped via Path(...).name and
+    # used solely in the Content-Disposition header (RFC 5987 safe).
+    "api_scan_merge",
 }
 
 
