@@ -98,7 +98,13 @@ def _draw_pageno(
     shown = numbered_idx + start
     text = fmt.replace("{n}", str(shown)).replace("{N}", str(numbered_total))
     m_pt = mm_to_pt(margin_mm)
-    r = page.rect
+    # page.rect 含旋轉(visual rect)。insert_text 用內容座標(unrotated)。
+    # 對旋轉過的頁(/Rotate 90/180/270),要把計算出的 visual 座標經
+    # derotation_matrix 轉回內容座標,並用 rotate= 讓文字方向跟著旋轉
+    # 才能讓文字落在 user 視覺認知的位置 + 朝向正確 (issue #21)。
+    import fitz
+    rot = int(getattr(page, "rotation", 0)) % 360
+    r = page.rect                                # visual rect(含旋轉)
     tw = font_size * len(text) * 0.55
     th = font_size * 1.2
     if position == "tl":   x, y = m_pt, m_pt + th
@@ -107,11 +113,22 @@ def _draw_pageno(
     elif position == "bl": x, y = m_pt, r.height - m_pt
     elif position == "bc": x, y = (r.width - tw) / 2, r.height - m_pt
     else:                  x, y = r.width - tw - m_pt, r.height - m_pt
-    page.insert_text(
-        (x, y), text,
-        fontsize=font_size, fontname="helv",
-        color=_hex_to_rgb01(color_hex),
-    )
+    # 把 visual 座標轉回內容座標
+    if rot:
+        # page.derotation_matrix: 從 visual 轉回內容空間
+        cp = fitz.Point(x, y) * page.derotation_matrix
+        page.insert_text(
+            cp, text,
+            fontsize=font_size, fontname="helv",
+            color=_hex_to_rgb01(color_hex),
+            rotate=rot,                          # 文字也跟著轉,才會朝向正確
+        )
+    else:
+        page.insert_text(
+            (x, y), text,
+            fontsize=font_size, fontname="helv",
+            color=_hex_to_rgb01(color_hex),
+        )
 
 
 @router.post("/preview-thumb")
