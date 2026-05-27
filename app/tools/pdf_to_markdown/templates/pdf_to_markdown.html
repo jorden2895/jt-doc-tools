@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+{% from "components/icons.html" import icon %}
+{% block title %}PDF 轉 Markdown · {{ app_name }}{% endblock %}
+{% block head %}
+<style>
+.pm-warn-box {
+  background:#fffbeb; border:1px solid #fde68a; border-radius:8px;
+  padding:10px 14px; margin:10px 0 14px; font-size:13px; color:#78350f;
+}
+.pm-warn-box b { color:#92400e; }
+/* Options grid — small cards instead of plain row layout */
+.pm-opts {
+  display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
+  gap:12px; margin-bottom:10px;
+}
+.pm-opt {
+  background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+  padding:12px 14px; display:flex; flex-direction:column; gap:6px;
+}
+.pm-opt-head {
+  display:flex; align-items:center; gap:6px;
+  font-size:13px; font-weight:600; color:#1e293b;
+}
+.pm-opt-head .pm-opt-icon { color:#64748b; display:inline-flex; }
+.pm-opt-hint { font-size:11px; color:#94a3b8; line-height:1.5; }
+.pm-opt-ctrl { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pm-opt-ctrl label { font-size:13px; color:#475569; cursor:pointer; }
+.pm-suited { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:8px; }
+.pm-suited > div { padding:8px 12px; border-radius:6px; font-size:12px; line-height:1.7; }
+.pm-suited .yes { background:#ecfdf5; border:1px solid #86efac; color:#065f46; }
+.pm-suited .no  { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+/* Result stats — small chip cards instead of inline text */
+.pm-stat {
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap:10px; margin:6px 0 14px;
+}
+.pm-stat-chip {
+  background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;
+  padding:10px 14px; display:flex; align-items:center; gap:10px;
+}
+.pm-stat-icon {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:30px; height:30px; border-radius:6px;
+  color:#3b82f6; background:#eff6ff; flex-shrink:0;
+}
+.pm-stat-body { display:flex; flex-direction:column; gap:2px; min-width:0; }
+.pm-stat-label { font-size:11px; color:#64748b; letter-spacing:.02em; }
+.pm-stat-value {
+  font-size:14px; font-weight:600; color:#0f172a;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  max-width:100%;
+}
+.pm-stat-chip.pm-stat-filename { grid-column: 1 / -1; }
+.pm-stat-chip.pm-stat-filename .pm-stat-value {
+  font-family:'SF Mono', Menlo, Consolas, monospace; font-size:13px;
+}
+.pm-preview {
+  background:#fff; border:1px solid var(--border); border-radius:6px;
+  padding:12px 14px; height:70vh; overflow:auto;
+  font-family:'SF Mono', Menlo, Consolas, monospace;
+  font-size:12.5px; line-height:1.6; white-space:pre-wrap;
+}
+.pm-splitwrap {
+  display:grid; grid-template-columns: 1fr 1fr; gap:14px;
+  margin-top:10px;
+  transition: grid-template-columns .2s;
+}
+/* Collapsed mode: visible pane takes most space, collapsed pane shrinks to
+   a thin clickable vertical rail (~32px) with rotated label + chevron. */
+.pm-splitwrap[data-mode="left-only"]  { grid-template-columns: 1fr 32px; }
+.pm-splitwrap[data-mode="right-only"] { grid-template-columns: 32px 1fr; }
+.pm-splitcol.rail {
+  min-width:0; overflow:hidden;
+  cursor:pointer;
+  background:#f1f5f9;
+  border-radius:6px;
+  transition: background .15s;
+}
+.pm-splitcol.rail:hover { background:#e2e8f0; }
+.pm-splitcol.rail .pm-splitcol-body { display:none; }
+.pm-splitcol.rail .pm-splitcol-head {
+  flex-direction: column;
+  padding:14px 0; height:100%;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  align-items: center; justify-content: center; gap:14px;
+  user-select:none;
+  pointer-events: none;  /* rail handles the click */
+}
+.pm-splitcol.rail .pm-splitcol-head > * {
+  pointer-events: none;
+}
+.pm-splitcol.rail .pm-splitcol-head > span:first-child {
+  /* Rotated label: name + icon */
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size:13px; color:#1e293b; font-weight:600;
+  white-space: nowrap;
+  letter-spacing: 0.05em;
+}
+.pm-splitcol.rail .pm-splitcol-head > span:last-child {
+  /* hide the muted hint + collapse button container when collapsed.
+     !important because the inline style="display:flex" on this span would
+     otherwise win specificity. */
+  display:none !important;
+}
+.pm-splitcol.rail .pm-splitcol-head .pm-collapse-btn,
+.pm-splitcol.rail .pm-splitcol-head .muted { display:none !important; }
+.pm-splitcol.rail::after {
+  /* chevron showing direction to expand */
+  content: '▶';
+  position: absolute;
+  bottom: 10px; left: 50%; transform: translateX(-50%);
+  color: #94a3b8; font-size: 14px;
+  pointer-events: none;
+}
+.pm-splitwrap[data-mode="right-only"] .pm-splitcol.rail::after { content: '▶'; }
+.pm-splitwrap[data-mode="left-only"]  .pm-splitcol.rail::after { content: '◀'; }
+.pm-splitcol.rail { position: relative; }
+.pm-splitcol.rail:hover::after { color: #1e293b; }
+@media (max-width: 900px) { .pm-splitwrap, .pm-splitwrap[data-mode] { grid-template-columns:1fr; } .pm-splitwrap[data-mode] .pm-splitcol { display:flex; } }
+.pm-collapse-btn {
+  background:transparent; border:1px solid #cbd5e1; border-radius:4px;
+  padding:2px 7px; font-size:11px; color:#64748b; cursor:pointer;
+  display:inline-flex; align-items:center; gap:4px; line-height:1.4;
+  transition: background .15s, border-color .15s;
+}
+.pm-collapse-btn:hover { background:#fff; border-color:#94a3b8; color:#1e293b; }
+.pm-splitcol {
+  background:#fff; border:1px solid var(--border); border-radius:6px;
+  display:flex; flex-direction:column; min-height:0; min-width:0;
+}
+.pm-splitcol-head {
+  padding:8px 14px; font-size:12px; font-weight:600; color:#475569;
+  background:#f1f5f9; border-bottom:1px solid var(--border);
+  border-radius:6px 6px 0 0;
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+}
+.pm-splitcol-body { flex:1; overflow:auto; min-height:0; }
+.pm-splitcol iframe { width:100%; height:70vh; border:0; display:block; }
+.pm-rendered {
+  padding:16px 22px; font-size:14px; line-height:1.7; color:#1e293b;
+  height:70vh; overflow:auto;
+}
+.pm-rendered h1, .pm-rendered h2, .pm-rendered h3, .pm-rendered h4 {
+  margin:1.2em 0 0.6em; line-height:1.3;
+}
+.pm-rendered h1 { font-size:1.5em; border-bottom:2px solid #e2e8f0; padding-bottom:4px; }
+.pm-rendered h2 { font-size:1.3em; border-bottom:1px solid #e2e8f0; padding-bottom:3px; }
+.pm-rendered h3 { font-size:1.15em; }
+.pm-rendered h4 { font-size:1.05em; }
+.pm-rendered p { margin:0.6em 0; }
+.pm-rendered ul, .pm-rendered ol { margin:0.4em 0 0.6em; padding-left:1.5em; }
+.pm-rendered li { margin:0.2em 0; }
+.pm-rendered code {
+  background:#f1f5f9; padding:1px 5px; border-radius:3px;
+  font-size:0.9em; font-family:'SF Mono', Menlo, monospace;
+}
+.pm-rendered pre {
+  background:#1e293b; color:#e2e8f0; padding:12px 14px;
+  border-radius:6px; overflow-x:auto; font-size:12px; line-height:1.5;
+}
+.pm-rendered pre code { background:transparent; padding:0; color:inherit; }
+.pm-rendered blockquote {
+  border-left:3px solid #cbd5e1; padding:4px 10px; color:#64748b;
+  margin:0.6em 0; background:#f8fafc;
+}
+.pm-rendered table {
+  border-collapse:collapse; margin:0.8em 0;
+}
+.pm-rendered th, .pm-rendered td {
+  border:1px solid #cbd5e1; padding:6px 10px; font-size:13px;
+}
+.pm-rendered th { background:#f1f5f9; }
+.pm-rendered img { max-width:100%; }
+.pm-rendered hr { border:0; border-top:1px dashed #cbd5e1; margin:1em 0; }
+.pm-view-toggle { display:inline-flex; background:#e5e7eb; padding:3px; border-radius:8px; gap:0; }
+.pm-view-btn {
+  background:transparent; border:none; padding:4px 12px;
+  border-radius:6px; cursor:pointer; font-size:12px; color:#475569; font-weight:500;
+}
+.pm-view-btn.active { background:#fff; color:#1e293b; box-shadow:0 1px 2px rgba(0,0,0,0.08); }
+.pm-spinner {
+  display:inline-block; width:12px; height:12px;
+  border:2px solid #cbd5e1; border-top-color:#4f46e5; border-radius:50%;
+  animation: pm-spin 0.7s linear infinite; vertical-align:-2px; margin-right:4px;
+}
+@keyframes pm-spin { to { transform: rotate(360deg); } }
+.pm-error {
+  background:#fef2f2; border:1px solid #fecaca; color:#991b1b;
+  padding:10px 12px; border-radius:6px; font-size:13px; white-space:pre-wrap;
+}
+.pm-actions { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+</style>
+{% endblock %}
+{% block content %}
+<h1>{{ icon('paragraph', size=22) }} PDF 轉 Markdown</h1>
+<p class="muted">把 PDF 轉成結構化 Markdown，自動偵測標題層級、表格、粗體。適合餵 LLM / RAG、文件遷移、版本控管。</p>
+
+<div class="pm-warn-box">
+  <b>{{ icon('warn', size=12) }} 適用情境提示</b>
+  <div class="pm-suited">
+    <div class="yes">
+      <b>✓ 適合</b><br>
+      • 技術手冊 / 教學文件 / 報告<br>
+      • 政府公文 / 法規 / 條款<br>
+      • 學術論文 / 書籍章節<br>
+      • 中英文段落文字（單欄為主）
+    </div>
+    <div class="no">
+      <b>✗ 不適合</b><br>
+      • 表單類（請用「擷取文字」或「PDF 轉文書檔」）<br>
+      • 簡報 / 投影片<br>
+      • 複雜版面（雜誌 / 海報 / 多欄複雜表格）<br>
+      • 純圖片 / 掃描檔（先用「OCR」加文字層）
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">1. 上傳 PDF</h2>
+  {% with upload_id='pmUpload', accept='application/pdf', hint='單檔、PDF only、上限 100 MB' %}
+    {% include "components/file_upload.html" %}
+  {% endwith %}
+</div>
+
+<div class="panel">
+  <h2 style="margin-top:0;">2. 選項</h2>
+  <div class="pm-opts">
+    <div class="pm-opt">
+      <div class="pm-opt-head">
+        <span class="pm-opt-icon">{{ icon('image', size=14) }}</span>
+        <span>抽出圖片</span>
+      </div>
+      <div class="pm-opt-ctrl">
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="pmIncludeImages">
+          <span>同時抽出 PDF 圖片</span>
+        </label>
+      </div>
+      <div class="pm-opt-hint">啟用時下載 ZIP 含 <code>images/</code> 資料夾，Markdown 以 <code>![](images/...)</code> 引用。</div>
+    </div>
+
+    <div class="pm-opt">
+      <div class="pm-opt-head">
+        <span class="pm-opt-icon">{{ icon('file-text', size=14) }}</span>
+        <span>圖片格式</span>
+      </div>
+      <div class="pm-opt-ctrl">
+        <select id="pmImageFormat" class="jt-select" style="max-width:160px;">
+          <option value="png" selected>PNG（無損）</option>
+          <option value="jpg">JPG（小檔）</option>
+          <option value="webp">WebP</option>
+        </select>
+      </div>
+      <div class="pm-opt-hint">PNG 適合文字 / 線稿；JPG / WebP 適合照片。僅在「抽出圖片」啟用時生效。</div>
+    </div>
+
+    <div class="pm-opt">
+      <div class="pm-opt-head">
+        <span class="pm-opt-icon">{{ icon('split', size=14) }}</span>
+        <span>頁分隔線</span>
+      </div>
+      <div class="pm-opt-ctrl">
+        <label style="display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="pmPageSeparator" checked>
+          <span>頁間插入 <code>-----</code></span>
+        </label>
+      </div>
+      <div class="pm-opt-hint">方便 LLM / RAG 系統按頁切 chunk。關閉則整份合成連續文字。</div>
+    </div>
+  </div>
+
+  <div class="pm-actions" style="margin-top:6px; padding-top:14px; border-top:1px solid #e2e8f0;">
+    <button class="btn btn-primary" id="pmConvert">{{ icon('refresh', size=12) }} 開始轉換</button>
+    <span id="pmStatus" style="font-size:13px; color:#64748b; align-self:center;"></span>
+  </div>
+  <div id="pmError" class="pm-error" hidden style="margin-top:10px;"></div>
+</div>
+
+<div class="panel" id="pmResultPanel" hidden>
+  <h2 style="margin-top:0;">3. 結果（Markdown 原文 ↔ 渲染對照）</h2>
+  <div class="pm-stat" id="pmStat"></div>
+  <div class="pm-actions">
+    <a class="btn btn-primary" id="pmDlMd" download href="#">{{ icon('download', size=12) }} 下載 .md</a>
+    <a class="btn" id="pmDlZip" download href="#" hidden style="background:#fff; border:1px solid #d1d5db;">{{ icon('download', size=12) }} 下載 ZIP（含圖片）</a>
+    <button class="btn" id="pmCopy" type="button" style="background:#fff; border:1px solid #d1d5db;">{{ icon('copy', size=12) }} 複製全文</button>
+  </div>
+
+  <div class="pm-splitwrap" id="pmSplitWrap" data-mode="both">
+    <div class="pm-splitcol" id="pmColLeft">
+      <div class="pm-splitcol-head">
+        <span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('file-text', size=14) }} Markdown 原始碼</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span class="muted" style="font-size:11px;">保留標記符號</span>
+          <button type="button" class="pm-collapse-btn" id="pmCollapseLeft" title="向左收折">◀ 收折</button>
+        </span>
+      </div>
+      <div class="pm-splitcol-body">
+        <div class="pm-preview" id="pmPreview"></div>
+      </div>
+    </div>
+    <div class="pm-splitcol" id="pmColRight">
+      <div class="pm-splitcol-head">
+        <span style="display:inline-flex; align-items:center; gap:6px;">{{ icon('paragraph', size=14) }} 渲染結果</span>
+        <span style="display:flex; align-items:center; gap:6px;">
+          <span class="muted" style="font-size:11px;">含標題 / 表格 / 粗體</span>
+          <button type="button" class="pm-collapse-btn" id="pmCollapseRight" title="向右收折">收折 ▶</button>
+        </span>
+      </div>
+      <div class="pm-splitcol-body">
+        <div class="pm-rendered" id="pmRendered"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/file_upload.js"></script>
+<script src="/static/js/custom_select.js"></script>
+<script src="/static/vendor/marked/marked.min.js"></script>
+<script src="/static/vendor/marked/purify.min.js"></script>
+{% raw %}
+<script>
+(function(){
+  const $ = (id) => document.getElementById(id);
+  let pickedFile = null;
+  let lastResult = null;
+
+  const fu = new FileUpload($('pmUpload'), (first) => {
+    pickedFile = first;
+    $('pmStatus').textContent = first ? `已選: ${first.name} (${(first.size/1024).toFixed(0)} KB)` : '';
+    $('pmError').hidden = true;
+    $('pmResultPanel').hidden = true;
+  });
+
+  $('pmConvert').addEventListener('click', async () => {
+    if (!pickedFile) { alert('請先選 PDF'); return; }
+    $('pmError').hidden = true;
+    $('pmResultPanel').hidden = true;
+    const btn = $('pmConvert');
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.innerHTML = '<span class="pm-spinner"></span>轉換中…';
+    $('pmStatus').innerHTML = '<span class="pm-spinner"></span>轉換中，大型 PDF 可能要 5-30 秒…';
+
+    const fd = new FormData();
+    fd.append('file', pickedFile);
+    fd.append('include_images', $('pmIncludeImages').checked ? 'true' : 'false');
+    fd.append('page_separator', $('pmPageSeparator').checked ? 'true' : 'false');
+    fd.append('image_format', $('pmImageFormat').value);
+
+    try {
+      const r = await fetch('/tools/pdf-to-markdown/convert', { method:'POST', body: fd });
+      if (!r.ok) {
+        const txt = await r.text();
+        $('pmError').textContent = '轉換失敗: ' + txt.slice(0, 500);
+        $('pmError').hidden = false;
+        $('pmStatus').textContent = '';
+        return;
+      }
+      const j = await r.json();
+      lastResult = j;
+      // Stats — chip cards
+      const stat = $('pmStat');
+      const _esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fileSvg  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+      const hashSvg  = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>';
+      const linesSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>';
+      const imgSvg   = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+      const chip = (cls, icon, label, value) =>
+        `<div class="pm-stat-chip ${cls}"><span class="pm-stat-icon">${icon}</span>` +
+        `<div class="pm-stat-body"><span class="pm-stat-label">${label}</span>` +
+        `<span class="pm-stat-value" title="${_esc(value)}">${_esc(value)}</span></div></div>`;
+      let html = chip('pm-stat-filename', fileSvg, '檔名', j.stem + '.md');
+      html += chip('', hashSvg, '字數', j.char_count.toLocaleString());
+      html += chip('', linesSvg, '行數', j.line_count.toLocaleString());
+      if (j.image_count > 0) {
+        html += chip('', imgSvg, '抽出圖片', j.image_count + ' 張');
+      }
+      stat.innerHTML = html;
+
+      $('pmDlMd').href = j.download_url;
+      if (j.download_zip_url) {
+        $('pmDlZip').href = j.download_zip_url;
+        $('pmDlZip').hidden = false;
+      } else {
+        $('pmDlZip').hidden = true;
+      }
+
+      // Source markdown on left pane (truncate if huge)
+      const TRUNC = 200000;
+      const sourceMd = j.markdown.length > TRUNC
+        ? j.markdown.slice(0, TRUNC) + '\n\n... [原始碼預覽截斷，完整內容請下載 .md]'
+        : j.markdown;
+      $('pmPreview').textContent = sourceMd;
+
+      // Rendered preview via marked + DOMPurify
+      try {
+        const html = window.marked.parse(j.markdown, { gfm: true, breaks: false });
+        const safe = window.DOMPurify.sanitize(html);
+        $('pmRendered').innerHTML = safe;
+      } catch (rerr) {
+        $('pmRendered').innerHTML = '<div class="pm-error">Markdown 渲染失敗: ' + rerr + '</div>';
+      }
+
+
+      $('pmResultPanel').hidden = false;
+      $('pmStatus').textContent = '✓ 完成';
+    } catch (e) {
+      $('pmError').textContent = '請求失敗: ' + e;
+      $('pmError').hidden = false;
+      $('pmStatus').textContent = '';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+  });
+
+  // Collapse / expand left and right panels.
+  // data-mode: 'both' | 'left-only' (right rail) | 'right-only' (left rail)
+  function _setMode(mode) {
+    const wrap = $('pmSplitWrap');
+    wrap.setAttribute('data-mode', mode);
+    const lCol = $('pmColLeft');
+    const rCol = $('pmColRight');
+    const lBtn = $('pmCollapseLeft');
+    const rBtn = $('pmCollapseRight');
+    lCol.classList.toggle('rail', mode === 'right-only');
+    rCol.classList.toggle('rail', mode === 'left-only');
+    // Update button labels — clicking the rail's button expands it back
+    if (mode === 'right-only') {
+      lBtn.textContent = '▶';   // left is rail → click to expand left
+      rBtn.textContent = '◀ 收折';
+    } else if (mode === 'left-only') {
+      lBtn.textContent = '收折 ▶';
+      rBtn.textContent = '◀';   // right is rail → click to expand right
+    } else {
+      lBtn.textContent = '◀ 收折';
+      rBtn.textContent = '收折 ▶';
+    }
+  }
+  // Click anywhere on a rail panel head expands it back to both
+  function _bindRailClick(col, btn, isLeftBtn) {
+    col.addEventListener('click', (e) => {
+      if (!col.classList.contains('rail')) return;
+      if (e.target.closest('.pm-collapse-btn')) return;  // let button handle
+      _setMode('both');
+    });
+  }
+  $('pmCollapseLeft').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cur = $('pmSplitWrap').getAttribute('data-mode');
+    if (cur === 'both') _setMode('right-only');     // collapse left
+    else _setMode('both');                          // expand
+  });
+  $('pmCollapseRight').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const cur = $('pmSplitWrap').getAttribute('data-mode');
+    if (cur === 'both') _setMode('left-only');      // collapse right
+    else _setMode('both');                          // expand
+  });
+  _bindRailClick($('pmColLeft'), $('pmCollapseLeft'), true);
+  _bindRailClick($('pmColRight'), $('pmCollapseRight'), false);
+
+  $('pmCopy').addEventListener('click', async () => {
+    if (!lastResult) return;
+    try {
+      await navigator.clipboard.writeText(lastResult.markdown);
+      const btn = $('pmCopy');
+      const orig = btn.innerHTML;
+      btn.textContent = '✓ 已複製';
+      setTimeout(() => { btn.innerHTML = orig; }, 1500);
+    } catch (e) {
+      alert('複製失敗: ' + e);
+    }
+  });
+})();
+</script>
+{% endraw %}
+{% endblock %}

@@ -4,6 +4,55 @@
 
 ---
 
+## [1.11.30] - 2026-05-27
+
+### 新增 — PDF 轉 Markdown 工具
+
+新工具 **「PDF 轉 Markdown」**（格式轉換分類），用 `pymupdf4llm` 把 PDF 轉成結構化 Markdown，適合餵 LLM / RAG、文件遷移、版本控管。
+
+**功能**：
+- **3 步驟流程**：上傳 PDF → 選項（含圖片 / 圖片格式 / 頁分隔線）→ 一鍵轉換
+- **左右分欄對照**：左邊 Markdown 原始碼、右邊 marked.js 即時渲染（標題層級、粗體、表格、清單、代碼框）
+- **側邊細條收折**：任一欄可收成 32 px 直書 rail，點擊展開回兩欄
+- **中文編號自動轉換**：`一、二、三、` → `1. 2. 3.`；`（一）（二）` → 3-space indent nested list；全形數字 `１.２.` → 半形
+- **圖片抽取**：含圖片時打包 ZIP（Markdown 內以 `![](images/...)` 引用），格式可選 PNG / JPG / WebP
+- **適用情境提示**：UI 明示「✓ 適合：手冊 / 公文 / 報告 / 論文 / 段落文字」「✗ 不適合：表單 / 簡報 / 複雜表格 / 純圖片掃描檔」
+- **下載 .md / 下載 ZIP / 複製全文** 三按鈕；統計區用 chip cards 顯示檔名 / 字數 / 行數 / 圖片數
+- **REST API**：`POST /tools/pdf-to-markdown/api/pdf-to-markdown` 給程式化呼叫，回 markdown 純文字 或含圖片 ZIP
+
+**新增依賴**：
+- `pymupdf4llm>=0.3.0,<0.4`（鎖在 lightweight 0.3.x，避開 1.27.x 拖 onnxruntime ~100MB ML layout 套件）
+- 已同步更新 `pyproject.toml` / `requirements.txt` / `uv.lock` / `cli.py` smoke test / `install.sh` smoke test / `setup-python.cmd`（Windows）
+
+### 新增 — JtSelect 自製下拉元件
+
+`static/js/custom_select.js` + `static/css/platform.css` 加 `.jt-select` 樣式系列。
+- 自動 enhance `<select class="jt-select">` 為配合 jt-doc-tools 風格的下拉元件
+- 支援 `<optgroup>`、鍵盤 ESC / ↑↓ / Enter / Space、點 outside 自動關閉、複選互斥
+- 同步 `<select>` 原生 `.value` 與 `change` 事件，**不破壞 form / 既有 JS**
+- pdf-stamp 1b 區段（格式 / 字型 / 粗細 / 邊緣粗糙） + pdf-to-markdown（圖片格式）已套用
+
+### 改善 — pdf-stamp 1b 插入日期區段
+
+- 標題列改用 framework `details.panel` pattern，跟其他 panel 視覺一致（灰藍漸層 header + ▶ 旋轉動畫）
+- 日期格式從 3 種擴展到 **13 種**（西元 ISO / 斜線 / 點 / 中文，民國各種變體含 padding 零選項）
+- 加字型粗細選擇（5 段，PIL `stroke_width` 模擬）
+- 加邊緣粗糙度（4 級：無 / 輕 / 中 / 重），模擬墨水滲紙 + 提筆斷墨
+- baseline-aligned per-char render（解決連字號 `-` 在 LXGW 中浮高的 bug）
+
+### 修正 — Markdown 下載檔名 `.md → md.txt` bug
+
+`pdf-to-markdown` 下載按鈕標 `.md` 但 OS 儲存對話框預設變 `md.txt`。
+原因：`content_disposition()` helper 回傳的是 string，被當 dict 傳給 `FileResponse(headers=...)` 被 Starlette 忽略。改用 Starlette 內建 `FileResponse(filename=...)` 處理 RFC 5987 CJK 檔名。API endpoint 同步修正成 `headers={"Content-Disposition": ...}` 正確 dict 結構。
+
+### 文件
+
+- README + docs/index.html 工具數 36 → **37**
+- API.md 補 `/tools/pdf-to-markdown/*` 4 個 endpoint
+- 工具自動進入 `default-user` 預設權限角色
+
+---
+
 ## [1.11.29] - 2026-05-27
 
 ### 新增 — 用印與簽名工具：插入手寫風日期

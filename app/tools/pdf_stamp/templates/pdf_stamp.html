@@ -66,7 +66,7 @@
           </div>
 
           <label style="font-size:13px;">格式</label>
-          <select id="date-format" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; max-width:380px;">
+          <select id="date-format" class="jt-select" style="max-width:380px;">
             <optgroup label="西元（ISO 風 / 中文）">
               <option value="iso">2026-05-26</option>
               <option value="iso-noz">2026-5-26</option>
@@ -87,13 +87,13 @@
           </select>
 
           <label style="font-size:13px;">字型</label>
-          <select id="date-font" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; max-width:280px;">
+          <select id="date-font" class="jt-select" style="max-width:280px;">
             <option value="lxgw" selected>文楷 LXGW（毛筆手寫感）</option>
             <option value="klee">Klee One（鉛筆手寫感）</option>
           </select>
 
           <label style="font-size:13px;">粗細</label>
-          <select id="date-weight" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; max-width:160px;">
+          <select id="date-weight" class="jt-select" style="max-width:160px;">
             <option value="light">細</option>
             <option value="regular" selected>標準</option>
             <option value="medium">中粗</option>
@@ -120,7 +120,7 @@
           </label>
 
           <label style="font-size:13px;">邊緣粗糙</label>
-          <select id="date-texture" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; max-width:160px;">
+          <select id="date-texture" class="jt-select" style="max-width:160px;">
             <option value="none">無（乾淨）</option>
             <option value="light">輕（微毛邊）</option>
             <option value="medium" selected>中（毛邊 + 缺口）</option>
@@ -232,6 +232,7 @@
 <script src="/static/js/job_progress.js"></script>
 <script src="/static/js/drag_position_editor.js"></script>
 <script src="/static/js/stamp_date_overlay.js"></script>
+<script src="/static/js/custom_select.js"></script>
 <script>
 let pickedFiles = [];   // all picked PDFs
 let editor = null;

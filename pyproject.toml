@@ -1,6 +1,6 @@
 [project]
 name = "jt-doc-tools"
-version = "1.11.29"
+version = "1.11.30"
 description = "Jason Tools 文件工具箱 — 整合式 PDF / Office 文件處理平台"
 authors = [{ name = "Jason Cheng (Jason Tools)", email = "jason@jason.tools" }]
 requires-python = ">=3.10"
@@ -26,6 +26,10 @@ dependencies = [
     "pydantic>=2.9.0,<3",
     "pydantic-settings>=2.5.0,<3",
     "PyMuPDF>=1.26.0,<2",
+    # pymupdf4llm — PyMuPDF 官方 RAG / Markdown 輸出套件,給 pdf-to-markdown 工具
+    # 鎖在 0.3.x:1.27.x 要求 pymupdf==1.27.2.3 + onnxruntime(~100MB ML layout)太重,
+    # 0.3.x 已能滿足純文檔 / 手冊類 PDF 的 markdown 需求
+    "pymupdf4llm>=0.3.0,<0.4",
     "Pillow>=12.2.0,<13",
     "pdfplumber>=0.11.0",
     # pyzipper 0.4.0 修了 small-file encryption bypass (Dependabot #45 Moderate)

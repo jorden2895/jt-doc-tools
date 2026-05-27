@@ -646,3 +646,80 @@ details.panel > summary select {
 .dpe-panel .rot-actions .btn { width: 100%; justify-content: flex-start; }
 .dpe-panel .bg-toggle { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .dpe-panel .bg-toggle .btn { width: 100%; justify-content: flex-start; }
+
+/* ===== Custom select (jt-select) ===== */
+/* Replaces native <select> with a styled dropdown matching app aesthetic.
+   Original <select class="jt-select"> stays in DOM (hidden) so .value /
+   form submit / change events keep working. */
+.jt-select-wrap { position: relative; display: inline-block; max-width: 100%; }
+select.jt-select-native {
+  position: absolute; opacity: 0; pointer-events: none;
+  width: 1px; height: 1px; left: -9999px;
+}
+.jt-select-trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; min-width: 120px;
+  padding: 6px 10px 6px 12px; gap: 8px;
+  border: 1px solid #d1d5db; border-radius: 5px;
+  background: #fff; font-size: 13px; color: #1e293b;
+  cursor: pointer; user-select: none;
+  font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.jt-select-trigger:hover { border-color: #94a3b8; }
+.jt-select-trigger:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.jt-select-trigger.open { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.jt-select-label {
+  flex: 1; min-width: 0;
+  text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jt-select-arrow {
+  width: 0; height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #64748b;
+  transition: transform .15s;
+}
+.jt-select-trigger.open .jt-select-arrow { transform: rotate(180deg); }
+.jt-select-panel {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  min-width: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0; border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.10);
+  max-height: 280px; overflow-y: auto;
+  z-index: 1000;
+  padding: 4px;
+}
+.jt-select-panel[hidden] { display: none; }
+.jt-select-group {
+  padding: 6px 10px 4px;
+  font-size: 11px; color: #94a3b8;
+  font-weight: 600; letter-spacing: 0.04em;
+  text-transform: none;
+}
+.jt-select-option {
+  padding: 6px 28px 6px 10px;
+  border-radius: 4px;
+  font-size: 13px; color: #1e293b;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+}
+.jt-select-option:hover,
+.jt-select-option:focus {
+  background: #f1f5f9;
+  outline: none;
+}
+.jt-select-option.selected {
+  background: #eff6ff; color: #1d4ed8; font-weight: 500;
+}
+.jt-select-option.selected::after {
+  content: '✓';
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  color: #3b82f6; font-weight: 600;
+}
+.jt-select-option.disabled {
+  color: #cbd5e1; cursor: not-allowed; pointer-events: none;
+}
