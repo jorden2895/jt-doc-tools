@@ -862,7 +862,8 @@ def ocr_pdf_to_searchable(
             from app.core import ocr_remote_settings as _ors_check
             chosen_engine = _oe.get_default_engine()
             remote_on = chosen_engine == "easyocr" and _ors_check.is_enabled_and_configured()
-            ocr_chosen_engine = chosen_engine
+            # 「使用者意圖」包含 remote — 失敗退回 local 也算 fallback
+            ocr_chosen_engine = "easyocr-remote" if remote_on else chosen_engine
             ocr_remote_on = remote_on
             engine_label = f"{chosen_engine}-remote(GPU)" if remote_on else chosen_engine
             _emit(cp, f"OCR 辨識中({engine_label} {langs})…")
@@ -874,12 +875,16 @@ def ocr_pdf_to_searchable(
             ocr_engine_pages[engine_used] = ocr_engine_pages.get(engine_used, 0) + 1
             if engine_used == "easyocr-remote":
                 ocr_remote_url = _ors_check.get().get("url", "")
-            if engine_used != chosen_engine and words:
-                # 比對改用 engine_used (含 'easyocr-remote' / 'easyocr' / 'tesseract')
+            # 「意圖」engine — remote_on 時意圖是 easyocr-remote (GPU)
+            intended = "easyocr-remote" if remote_on else chosen_engine
+            if engine_used != intended and words:
                 if engine_used == "easyocr-remote":
                     _emit(cp, f"OCR 完成 (遠端 GPU EasyOCR @ {_ors_check.get().get('url', '')})")
+                elif intended == "easyocr-remote":
+                    # 選用 GPU remote 但失敗 → 退回本機 (CPU)
+                    _emit(cp, f"OCR 完成（遠端 GPU EasyOCR 失敗,改用本機 {engine_used} (CPU)）")
                 else:
-                    _emit(cp, f"OCR 完成({chosen_engine} 失敗,自動切 {engine_used})")
+                    _emit(cp, f"OCR 完成（{chosen_engine} 失敗,改用 {engine_used}）")
             elif engine_used == "easyocr-remote" and words:
                 _emit(cp, f"OCR 完成 (遠端 GPU EasyOCR @ {_ors_check.get().get('url', '')})")
             if not words:

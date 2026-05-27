@@ -4,6 +4,22 @@
 
 ---
 
+## [1.11.34] - 2026-05-27
+
+### 修正 — pdf-ocr 選 GPU 遠端但實際退回本機 CPU 沒提示
+
+**症狀**：客戶設好遠端 GPU EasyOCR Server，進度列中段也看到「easyocr-remote(GPU)」字樣，但結尾完成訊息卻寫「本機 EasyOCR (CPU)」— 沒看出實際走的不是 GPU 而是悄悄退回 CPU。
+
+**根因**：v1.11.32 的退回偵測只比對 `engine_used.replace("-remote","") != ocr_chosen_engine`。當意圖是 GPU remote、實際退到 local easyocr 時，去 `-remote` 後正好相等 → 判定「沒退回」，誤標 CPU。
+
+**修法**：
+- `ocr_chosen_engine` 改記完整意圖（remote 時記成 `easyocr-remote`，不只 `easyocr`）
+- 退回比對改成直接 `engine_used != ocr_chosen_engine`
+- 每頁 emit：意圖 remote 但 engine_used 是本機 easyocr 時，明寫「遠端 GPU EasyOCR 失敗，改用本機 ... (CPU)」
+- 完成訊息結尾改為「選用 遠端 GPU EasyOCR 失敗 → 退回 本機 EasyOCR (CPU), 用時 211.2s」
+
+---
+
 ## [1.11.33] - 2026-05-27
 
 ### 改善 — pdf-ocr 啟動階段狀態列卡「排隊中」誤導 user

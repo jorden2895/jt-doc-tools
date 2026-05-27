@@ -528,7 +528,7 @@ async def run_ocr(upload_id: str, request: Request,
                 "tesseract": "本機 Tesseract (CPU)",
             }
             def _chosen_label() -> str:
-                if ocr_chosen_engine == "easyocr" and ocr_remote_on:
+                if ocr_chosen_engine == "easyocr-remote":
                     return "遠端 GPU EasyOCR"
                 if ocr_chosen_engine == "easyocr":
                     return "本機 EasyOCR"
@@ -540,9 +540,8 @@ async def run_ocr(upload_id: str, request: Request,
                 if len(ocr_engine_pages) == 1:
                     eng = next(iter(ocr_engine_pages))
                     label = ENG_LABEL.get(eng, eng)
-                    # 偵測退回：選用 vs 實際不同 → 標示「(退回)」
-                    used_root = eng.replace("-remote", "")
-                    if ocr_chosen_engine and used_root != ocr_chosen_engine:
+                    # 偵測退回：選用 (含 -remote 意圖) vs 實際 engine_used 不同 → 標示
+                    if ocr_chosen_engine and eng != ocr_chosen_engine:
                         extra += f"，選用 {_chosen_label()} 失敗 → 退回 {label}, 用時 {ocr_engine_total_s}s"
                     else:
                         extra += f"，{label}, 用時 {ocr_engine_total_s}s"
