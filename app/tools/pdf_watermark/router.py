@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 import zipfile
@@ -213,50 +214,11 @@ async def preview_watermarked(
     }
 
 
-@router.post("/submit")
-async def submit(
-    request: Request,
-    file: List[UploadFile] = File(...),
-    params: str = Form(...),
-    page_mode: str = Form("all"),
-    asset_id: Optional[str] = Form(None),
-    temp_asset_file: Optional[UploadFile] = File(None),
-):
-    base_params = _parse_params(params)
-    # Capture actor up top so the background job's history.save can attribute
-    # the entry to the right user. v1.4.43 bug fix: previously only captured
-    # in the asset-mode branch, so text-mode watermarks always logged
-    # username="" → 歷史記錄全變「(匿名)」.
-    from ...core import sessions as _sessions
-    actor = _sessions.user_label(getattr(request.state, "user", None))
-    wm_png: Optional[Path] = None
-    if not (base_params.text and base_params.text.strip()):
-        if not asset_id:
-            raise HTTPException(400, "需要 asset_id 或 text")
-        wm_png = await _resolve_watermark_source(
-            asset_id, temp_asset_file, request=request, actor_username=actor)
-        if wm_png is None:
-            raise HTTPException(400, "asset not found")
-    files = file or []
-    if not files:
-        raise HTTPException(400, "沒有檔案")
-    for f in files:
-        if not (f.filename or "").lower().endswith(".pdf"):
-            raise HTTPException(400, f"只支援 PDF：{f.filename}")
-
-    batch_id = uuid.uuid4().hex
-    batch_dir = settings.temp_dir / f"wm_batch_{batch_id}"
-    batch_dir.mkdir(parents=True, exist_ok=True)
-    saved: list[tuple[Path, str]] = []
-    for i, f in enumerate(files):
-        data = await f.read()
-        if not data:
-            raise HTTPException(400, f"空檔：{f.filename}")
-        safe = Path(f.filename).name or f"input_{i}.pdf"
-        sp = batch_dir / f"{i:03d}_{safe}"
-        sp.write_bytes(data)
-        saved.append((sp, safe))
-
+def _build_run(batch_dir: Path, saved: "list[tuple[Path, str]]",
+               base_params, page_mode: str, wm_png: Optional[Path],
+               asset_id: Optional[str], actor: str):
+    """產生 job 的 run(job) closure。/submit（單發）與 /batch/process（逐檔
+    累積）共用同一套處理 + 打包 ZIP 邏輯。"""
     def run(job):
         total = len(saved)
         results: list[tuple[Path, str]] = []
@@ -310,9 +272,168 @@ async def submit(
         except Exception:
             import logging as _lg
             _lg.getLogger(__name__).exception("watermark_history.save failed")
+    return run
+
+
+@router.post("/submit")
+async def submit(
+    request: Request,
+    file: List[UploadFile] = File(...),
+    params: str = Form(...),
+    page_mode: str = Form("all"),
+    asset_id: Optional[str] = Form(None),
+    temp_asset_file: Optional[UploadFile] = File(None),
+):
+    base_params = _parse_params(params)
+    # Capture actor up top so the background job's history.save can attribute
+    # the entry to the right user. v1.4.43 bug fix: previously only captured
+    # in the asset-mode branch, so text-mode watermarks always logged
+    # username="" → 歷史記錄全變「(匿名)」.
+    from ...core import sessions as _sessions
+    actor = _sessions.user_label(getattr(request.state, "user", None))
+    wm_png: Optional[Path] = None
+    if not (base_params.text and base_params.text.strip()):
+        if not asset_id:
+            raise HTTPException(400, "需要 asset_id 或 text")
+        wm_png = await _resolve_watermark_source(
+            asset_id, temp_asset_file, request=request, actor_username=actor)
+        if wm_png is None:
+            raise HTTPException(400, "asset not found")
+    files = file or []
+    if not files:
+        raise HTTPException(400, "沒有檔案")
+    for f in files:
+        if not (f.filename or "").lower().endswith(".pdf"):
+            raise HTTPException(400, f"只支援 PDF：{f.filename}")
+
+    batch_id = uuid.uuid4().hex
+    batch_dir = settings.temp_dir / f"wm_batch_{batch_id}"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    saved: list[tuple[Path, str]] = []
+    for i, f in enumerate(files):
+        data = await f.read()
+        if not data:
+            raise HTTPException(400, f"空檔：{f.filename}")
+        safe = Path(f.filename).name or f"input_{i}.pdf"
+        sp = batch_dir / f"{i:03d}_{safe}"
+        sp.write_bytes(data)
+        saved.append((sp, safe))
 
     job = job_manager.submit(
-        "pdf-watermark", run,
+        "pdf-watermark",
+        _build_run(batch_dir, saved, base_params, page_mode, wm_png, asset_id, actor),
+        meta={"asset_id": asset_id, "count": len(saved)},
+    )
+    return {"job_id": job.id}
+
+
+# ===== 逐檔順序上傳（issue #27）=====
+# 大批次（數十~上百份）一次塞進單一 multipart 會撞反向代理 / 伺服器的 body
+# 上限而靜默失敗。改成：create → 逐檔 add（每請求只一個小 PDF）→ process。
+# 每個請求 body 都很小，永遠不撞上限，也不靠使用者改 proxy。
+_BATCH_RE = re.compile(r"^[a-f0-9]{32}$")
+
+
+def _batch_dir(batch_id: str) -> Path:
+    if not _BATCH_RE.match(batch_id or ""):
+        raise HTTPException(400, "invalid batch_id")
+    return settings.temp_dir / f"wm_batch_{batch_id}"
+
+
+@router.post("/batch/create")
+async def batch_create(
+    request: Request,
+    params: str = Form(...),
+    page_mode: str = Form("all"),
+    asset_id: Optional[str] = Form(None),
+    temp_asset_file: Optional[UploadFile] = File(None),
+):
+    base_params = _parse_params(params)
+    from ...core import sessions as _sessions
+    actor = _sessions.user_label(getattr(request.state, "user", None))
+    wm_name = None
+    if not (base_params.text and base_params.text.strip()):
+        if not asset_id:
+            raise HTTPException(400, "需要 asset_id 或 text")
+        wm_png = await _resolve_watermark_source(
+            asset_id, temp_asset_file, request=request, actor_username=actor)
+        if wm_png is None:
+            raise HTTPException(400, "asset not found")
+    batch_id = uuid.uuid4().hex
+    bdir = settings.temp_dir / f"wm_batch_{batch_id}"
+    bdir.mkdir(parents=True, exist_ok=True)
+    # 浮水印來源圖搬進 batch 目錄，避免暫存清理把它清掉
+    if not (base_params.text and base_params.text.strip()):
+        wm_dst = bdir / "_wm.png"
+        try:
+            wm_dst.write_bytes(Path(wm_png).read_bytes())
+            wm_name = wm_dst.name
+        except Exception:
+            raise HTTPException(400, "watermark source unavailable")
+    meta = {
+        "params": params, "page_mode": page_mode, "asset_id": asset_id,
+        "actor": actor, "wm_name": wm_name,
+    }
+    (bdir / "_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    try:
+        from ...core import upload_owner
+        upload_owner.record(batch_id, request)
+    except Exception:
+        pass
+    return {"batch_id": batch_id}
+
+
+@router.post("/batch/{batch_id}/add")
+async def batch_add(
+    batch_id: str, request: Request,
+    file: UploadFile = File(...), index: int = Form(...),
+):
+    bdir = _batch_dir(batch_id)
+    if not bdir.is_dir():
+        raise HTTPException(410, "batch 已過期，請重新上傳")
+    from ...core import upload_owner
+    upload_owner.require(batch_id, request)
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, f"只支援 PDF：{file.filename}")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, f"空檔：{file.filename}")
+    if index < 0 or index > 9998:
+        raise HTTPException(400, "index 超出範圍")
+    safe = Path(file.filename).name or f"input_{index}.pdf"
+    sp = bdir / f"{index:03d}_{safe}"
+    sp.write_bytes(data)
+    return {"ok": True, "saved": sp.name}
+
+
+@router.post("/batch/{batch_id}/process")
+async def batch_process(batch_id: str, request: Request):
+    bdir = _batch_dir(batch_id)
+    if not bdir.is_dir():
+        raise HTTPException(410, "batch 已過期，請重新上傳")
+    from ...core import upload_owner
+    upload_owner.require(batch_id, request)
+    try:
+        meta = json.loads((bdir / "_meta.json").read_text(encoding="utf-8"))
+    except Exception:
+        raise HTTPException(400, "batch meta 毀損，請重新上傳")
+    base_params = _parse_params(meta.get("params") or "{}")
+    page_mode = meta.get("page_mode") or "all"
+    asset_id = meta.get("asset_id")
+    actor = meta.get("actor") or ""
+    wm_png = (bdir / meta["wm_name"]) if meta.get("wm_name") else None
+    # 收集已上傳的輸入 PDF（依數字前綴排序；排除浮水印圖 / 產出檔）
+    inputs = sorted(
+        [p for p in bdir.glob("*.pdf")
+         if re.match(r"^\d{3}_", p.name) and not p.name.endswith("_watermarked.pdf")],
+        key=lambda p: int(re.match(r"^(\d+)_", p.name).group(1)),
+    )
+    if not inputs:
+        raise HTTPException(400, "沒有已上傳的檔案")
+    saved = [(p, re.sub(r"^\d+_", "", p.name)) for p in inputs]
+    job = job_manager.submit(
+        "pdf-watermark",
+        _build_run(bdir, saved, base_params, page_mode, wm_png, asset_id, actor),
         meta={"asset_id": asset_id, "count": len(saved)},
     )
     return {"job_id": job.id}

@@ -264,8 +264,16 @@ function renderBatchList() {
   if (!box) return;
   if (pickedFiles.length <= 1) { box.hidden = true; box.innerHTML = ''; return; }
   box.hidden = false;
-  box.innerHTML = '<div class="muted" style="font-size:12px; margin-bottom:6px;">共 '
-    + pickedFiles.length + ' 份 PDF，將套用相同浮水印設定，完成後打包為 ZIP。</div>'
+  const totalMB = pickedFiles.reduce((n, f) => n + (f.size || 0), 0) / 1048576;
+  // 一次上傳的總量大時，反向代理 / 伺服器可能拒收（issue #27）。提早提醒。
+  const warn = totalMB > 80
+    ? `<div style="font-size:12px; margin-bottom:6px; color:#b45309; background:#fffbeb; border:1px solid #fde68a; border-radius:5px; padding:6px 8px;">`
+      + `本次總量約 ${totalMB.toFixed(1)} MB，份數 / 容量較大時可能超過伺服器或反向代理的上傳上限而送出失敗。`
+      + `若送出沒反應，請分批上傳，或請管理員調高 client_max_body_size 與 proxy timeout。</div>`
+    : '';
+  box.innerHTML = warn
+    + '<div class="muted" style="font-size:12px; margin-bottom:6px;">共 '
+    + pickedFiles.length + ` 份 PDF（約 ${totalMB.toFixed(1)} MB），將套用相同浮水印設定，完成後打包為 ZIP。</div>`
     + '<ul style="margin:0; padding-left:18px;">'
     + pickedFiles.map(f => `<li>${escapeHTML(f.name)}</li>`).join('')
     + '</ul>';
@@ -313,14 +321,20 @@ function getMode(){ return document.querySelector('input[name=mode]:checked').va
 async function loadPreviewInfo(){
   const f = firstFile(); if (!f) return null;
   const fd = new FormData(); fd.append('file', f);
-  const r = await fu.upload('/tools/pdf-watermark/preview', fd, {processingLabel: '產生預覽中…'});
-  if (!r.ok) return null;
-  previewInfo = await r.json();
-  if (editor) {
-    editor.setPaper(previewInfo.paper_w_mm, previewInfo.paper_h_mm);
-    editor.setBackground(previewInfo.preview_url);
+  try {
+    const r = await fu.upload('/tools/pdf-watermark/preview', fd, {processingLabel: '產生預覽中…'});
+    if (!r.ok) { console.warn('preview failed', r.status); return null; }
+    previewInfo = await r.json();
+    if (editor) {
+      editor.setPaper(previewInfo.paper_w_mm, previewInfo.paper_h_mm);
+      editor.setBackground(previewInfo.preview_url);
+    }
+    return previewInfo;
+  } catch (e) {
+    // 連線失敗 — 不讓未捕捉的 rejection 中斷後續流程（issue #27）。
+    console.warn('preview upload error', e);
+    return null;
   }
-  return previewInfo;
 }
 
 function getEditorAssetUrl(){
@@ -514,23 +528,63 @@ document.getElementById('btn-submit').addEventListener('click', async () => {
   if (src === 'asset' && !getSelectedAsset()) return alert('請先選擇浮水印圖片，或切到「文字」模式');
   if (src === 'text' && !document.getElementById('wm-text').value.trim()) return alert('請輸入浮水印文字');
   if (!pickedFiles.length) return alert('請先上傳 PDF');
-  const fd = new FormData();
-  if (src === 'asset') {
-    const aid = getSelectedAsset();
-    fd.append('asset_id', aid);
-    if (aid === '__temp__') {
-      const tf = wmTempAssetAsFile();
-      if (!tf) return alert('臨時資產已遺失，請重新上傳');
-      fd.append('temp_asset_file', tf, tf.name);
+
+  // 逐檔順序上傳（issue #27）：create → 每份各一個請求 add → process。
+  // 每個請求 body 都很小，不會撞反向代理 / 伺服器的上傳大小上限。
+  const btn = document.getElementById('btn-submit');
+  const origHtml = btn.innerHTML;
+  const setBtn = (t) => { btn.textContent = t; };
+  btn.disabled = true;
+  try {
+    // 1) 建立批次（帶浮水印設定 + 來源圖）
+    const cfd = new FormData();
+    if (src === 'asset') {
+      const aid = getSelectedAsset();
+      cfd.append('asset_id', aid);
+      if (aid === '__temp__') {
+        const tf = wmTempAssetAsFile();
+        if (!tf) { alert('臨時資產已遺失，請重新上傳'); return; }
+        cfd.append('temp_asset_file', tf, tf.name);
+      }
     }
+    cfd.append('params', JSON.stringify(buildParams()));
+    cfd.append('page_mode', document.getElementById('page-mode').value);
+    setBtn('建立批次中…');
+    let cr;
+    try { cr = await fetch('/tools/pdf-watermark/batch/create', { method: 'POST', body: cfd }); }
+    catch (e) { alert('建立批次失敗（連線中斷），請稍後再試。'); return; }
+    if (!cr.ok) { alert('建立批次失敗：' + (await cr.text().catch(() => 'HTTP ' + cr.status))); return; }
+    const batchId = (await cr.json()).batch_id;
+
+    // 2) 逐檔上傳
+    const total = pickedFiles.length;
+    for (let i = 0; i < total; i++) {
+      setBtn(`上傳中… ${i + 1}/${total}`);
+      const afd = new FormData();
+      afd.append('file', pickedFiles[i], pickedFiles[i].name);
+      afd.append('index', String(i));
+      let ar;
+      try { ar = await fetch(`/tools/pdf-watermark/batch/${batchId}/add`, { method: 'POST', body: afd }); }
+      catch (e) {
+        alert(`上傳第 ${i + 1}/${total} 份時連線中斷。\n單一檔案仍過大或網路不穩，請重試或檢查該檔。`);
+        return;
+      }
+      if (!ar.ok) {
+        if (ar.status === 413) { alert(`第 ${i + 1} 份單檔過大（HTTP 413），請調高反向代理 client_max_body_size。`); return; }
+        alert(`上傳第 ${i + 1}/${total} 份失敗：` + (await ar.text().catch(() => 'HTTP ' + ar.status)));
+        return;
+      }
+    }
+
+    // 3) 觸發處理
+    setBtn('排隊處理中…');
+    const pr = await fetch(`/tools/pdf-watermark/batch/${batchId}/process`, { method: 'POST' });
+    if (!pr.ok) { alert('處理失敗：' + (await pr.text().catch(() => 'HTTP ' + pr.status))); return; }
+    progress.track((await pr.json()).job_id);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
   }
-  for (const f of pickedFiles) fd.append('file', f);
-  fd.append('params', JSON.stringify(buildParams()));
-  fd.append('page_mode', document.getElementById('page-mode').value);
-  const r = await fu.upload('/tools/pdf-watermark/submit', fd, {processingLabel: '排隊處理浮水印中…'});
-  if (!r.ok) { return alert('送出失敗：' + await r.text()); }
-  const j = await r.json();
-  progress.track(j.job_id);
 });
 
 // Source toggle + text controls
