@@ -4,6 +4,13 @@
 
 ---
 
+## [1.12.2] - 2026-06-14
+
+### 改善 — `/admin/sso` 加常見 IdP 設定範例
+
+- SSO 設定頁新增可收折的「常見 IdP 設定範例」面板：列出 **Microsoft 365 / Entra ID、Google Workspace、Keycloak** 的 OIDC 填寫值（Issuer / scopes / claims）與 **Entra、Keycloak** 的 SAML 值（EntityID / SSO URL / 群組屬性），含注意事項（Entra 群組送 GUID 非名稱、Google id_token 不含群組需手動指派角色）。
+- 另：補上 OIDC + SAML 端到端測試（自架符合規範的迷你 IdP，真 RSA / xmlsec 簽章），涵蓋登入 happy-path 與攻擊路徑（nonce / 簽章 / 金鑰竄改皆正確拒絕）：`tests/test_sso_oidc_e2e.py`、`tests/test_sso_saml_e2e.py`。
+
 ## [1.12.1] - 2026-06-14
 
 ### 修正 — v1.12.0 SSO 自我審查發現的兩個問題

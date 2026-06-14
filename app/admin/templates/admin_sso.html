@@ -19,6 +19,53 @@
   <div id="urlHints" class="muted" style="font-size:12px; margin-top:8px;"></div>
 </div>
 
+<details class="panel">
+  <summary style="cursor:pointer; font-weight:600; font-size:15px;">{{ icon('page', size=14) }} 常見 IdP 設定範例（點開）</summary>
+  <p class="muted" style="font-size:12px; margin-top:10px;">把 <code>&lt;...&gt;</code> 換成你的實際值。各家都要先在 IdP 端把 <b>Redirect URI</b>（OIDC）或 <b>ACS</b>（SAML）設成本站對外網址，見上方提示。</p>
+
+  <h3 style="margin:14px 0 6px;">OIDC</h3>
+  <table class="kv sso-eg">
+    <tr><th>欄位</th><th>Microsoft 365 / Entra ID</th><th>Google Workspace</th><th>Keycloak</th></tr>
+    <tr><td>Issuer</td>
+        <td><code>https://login.microsoftonline.com/&lt;tenant-id&gt;/v2.0</code></td>
+        <td><code>https://accounts.google.com</code></td>
+        <td><code>https://&lt;keycloak&gt;/realms/&lt;realm&gt;</code></td></tr>
+    <tr><td>Client ID / Secret</td>
+        <td colspan="3">在 IdP 端建立應用程式（Entra：應用程式註冊；Google：OAuth 用戶端 ID；Keycloak：confidential client）後取得</td></tr>
+    <tr><td>Scopes</td><td colspan="3"><code>openid email profile</code>（三家相同）</td></tr>
+    <tr><td>使用者名稱 claim</td>
+        <td><code>preferred_username</code></td>
+        <td><code>email</code>（Google 無 preferred_username）</td>
+        <td><code>preferred_username</code></td></tr>
+    <tr><td>Email / 顯示名稱 claim</td><td colspan="3"><code>email</code> / <code>name</code>（三家相同）</td></tr>
+    <tr><td>群組 claim</td>
+        <td><code>groups</code>（需在 token 設定加 groups claim）</td>
+        <td>—（Google id_token 不含群組，留空，角色用權限矩陣手動指派）</td>
+        <td><code>groups</code>（需加 Group Membership mapper）</td></tr>
+  </table>
+  <p class="muted" style="font-size:11px; margin:6px 0 0;">
+    ⚠ <b>Entra 群組</b>預設送的是群組 <b>GUID</b> 不是名稱；「管理員群組」與權限矩陣請填該 GUID，或在 Entra 設定送 group name。<br>
+    ⚠ <b>Google</b> 沒有標準群組 claim；要群組對應需另接 Cloud Identity，否則留空、用權限矩陣手動給角色。
+  </p>
+
+  <h3 style="margin:16px 0 6px;">SAML</h3>
+  <table class="kv sso-eg">
+    <tr><th>欄位</th><th>Entra ID（企業應用程式）</th><th>Keycloak</th></tr>
+    <tr><td>IdP EntityID</td>
+        <td><code>https://sts.windows.net/&lt;tenant-id&gt;/</code></td>
+        <td><code>https://&lt;keycloak&gt;/realms/&lt;realm&gt;</code></td></tr>
+    <tr><td>IdP SSO URL</td>
+        <td><code>https://login.microsoftonline.com/&lt;tenant-id&gt;/saml2</code></td>
+        <td><code>https://&lt;keycloak&gt;/realms/&lt;realm&gt;/protocol/saml</code></td></tr>
+    <tr><td>簽章憑證</td><td colspan="2">從 IdP 的 Federation Metadata / SAML descriptor 取 X.509（貼憑證內容，不含 BEGIN/END 行）</td></tr>
+    <tr><td>群組屬性</td>
+        <td><code>http://schemas.microsoft.com/ws/2008/06/identity/claims/groups</code></td>
+        <td><code>groups</code>（需加 Group list mapper）</td></tr>
+  </table>
+  <p class="muted" style="font-size:11px; margin:6px 0 0;">SAML 也是 Entra 送群組 GUID；Google Workspace SAML 不送群組屬性。把本站 SP metadata（<code>&lt;base&gt;/auth/saml/metadata</code>）餵給 IdP 最省事。</p>
+  <style>.sso-eg th, .sso-eg td { font-size:11px; vertical-align:top; padding:4px 8px; border:1px solid #e5e7eb; } .sso-eg code { font-size:10.5px; word-break:break-all; }</style>
+</details>
+
 <div class="panel">
   <h2 style="margin-top:0;">OIDC（OpenID Connect）</h2>
   <p class="muted" style="font-size:12px;">適用 Microsoft 365 / Entra ID、Google、Keycloak、Okta、Authentik 等。在 IdP 設定 Redirect URI 為 <code id="oidcRedirect">（先填 base URL）</code>。</p>
