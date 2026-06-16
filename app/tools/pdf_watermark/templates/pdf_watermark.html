@@ -180,7 +180,14 @@
 
 <div class="panel" id="sim-panel" hidden>
   <h2 style="margin-top:0;">即時預覽</h2>
-  <div id="sim-status" class="muted" style="font-size:12px;">產生中…</div>
+  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+    <div id="sim-status" class="muted" style="font-size:12px;">產生中…</div>
+    <div id="wm-page-nav" hidden style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+      <button class="btn btn-sm" id="wm-prev" type="button" title="上一頁">‹</button>
+      <span id="wm-page-info" class="muted" style="font-size:12px; min-width:64px; text-align:center;"></span>
+      <button class="btn btn-sm" id="wm-next" type="button" title="下一頁">›</button>
+    </div>
+  </div>
   <div id="sim-image-wrap" style="margin-top:8px; background:#e5e7eb; border-radius:6px; padding:16px; display:flex; justify-content:center;">
     <img id="sim-image" alt="浮水印預覽" style="max-width:100%; max-height:600px; box-shadow:0 4px 20px rgba(0,0,0,.15); background:#fff;" />
   </div>
@@ -255,6 +262,7 @@ let previewInfo = null;
 
 const fu = new FileUpload(document.getElementById('wmUpload'), async (_first, files) => {
   pickedFiles = Array.isArray(files) ? files : (files ? [files] : []);
+  simPage = 0;  // new file → back to page 1
   renderBatchList();
   await loadPreviewInfo();
   refreshSim();
@@ -459,6 +467,14 @@ function buildParams(){
 }
 
 let simSeq = 0; let simDebounce = null;
+let simPage = 0; let simPageCount = 1;
+function updateWmPageNav(){
+  const nav = document.getElementById('wm-page-nav');
+  nav.hidden = simPageCount <= 1;
+  document.getElementById('wm-page-info').textContent = (simPage + 1) + ' / ' + simPageCount;
+  document.getElementById('wm-prev').disabled = simPage <= 0;
+  document.getElementById('wm-next').disabled = simPage >= simPageCount - 1;
+}
 function refreshSim(){
   const f = firstFile(); if (!f) { document.getElementById('sim-panel').hidden = true; return; }
   const src = getSource();
@@ -488,19 +504,30 @@ function refreshSim(){
     }
     fd.append('file', f);
     fd.append('params', JSON.stringify(buildParams()));
+    fd.append('page', simPage);
     try {
       const r = await fu.upload('/tools/pdf-watermark/preview-watermarked', fd, {processingLabel: '產生預覽中…'});
       if (seq !== simSeq) return;
       if (!r.ok) { status.textContent = '預覽產生失敗'; return; }
       const j = await r.json();
       img.src = j.preview_url + `?t=${Date.now()}`;
-      status.textContent = `第 1 頁預覽 / 共 ${j.page_count} 頁（依目前設定）`;
+      simPageCount = j.page_count || 1;
+      if (typeof j.page === 'number') simPage = j.page;  // backend clamps
+      updateWmPageNav();
+      status.textContent = `第 ${simPage + 1} 頁預覽 / 共 ${simPageCount} 頁（依目前設定）`;
     } catch(e) {
       if (seq !== simSeq) return;
       status.textContent = '預覽產生失敗';
     }
   }, 300);
 }
+
+document.getElementById('wm-prev').addEventListener('click', () => {
+  if (simPage > 0) { simPage--; updateWmPageNav(); refreshSim(); }
+});
+document.getElementById('wm-next').addEventListener('click', () => {
+  if (simPage < simPageCount - 1) { simPage++; updateWmPageNav(); refreshSim(); }
+});
 
 document.addEventListener('change', (e) => {
   if (e.target.matches('input[name=asset]')) {

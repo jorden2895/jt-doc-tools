@@ -45,3 +45,31 @@ def test_load_font_skips_non_cjk_user_font_when_text_has_cjk():
     if isinstance(f_cjk, ImageFont.FreeTypeFont):
         assert _font_covers_cjk(f_cjk) or f_cjk.path != str(dejavu), \
             "CJK text got DejaVuSans (no CJK glyphs) — would render as tofu"
+
+
+def test_preview_watermarked_per_page(tmp_path):
+    """Multi-page watermark preview: the `page` form field selects which page is
+    rendered, and out-of-range is clamped (GitHub #28 follow-up — page switching)."""
+    import io, json
+    import fitz
+    from fastapi.testclient import TestClient
+    import app.main as app_main
+
+    doc = fitz.open()
+    for i in range(3):
+        doc.new_page(width=595, height=842).insert_text((72, 72), f"PAGE {i+1}")
+    buf = io.BytesIO(); doc.save(buf); doc.close()
+    c = TestClient(app_main.app)
+    params = json.dumps({"mode": "tile", "opacity": 0.3, "text": "WM", "rotation_deg": 30})
+
+    def req(page):
+        r = c.post("/tools/pdf-watermark/preview-watermarked",
+                   files={"file": ("a.pdf", buf.getvalue(), "application/pdf")},
+                   data={"params": params, "page": str(page)})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    assert req(0)["page"] == 0 and req(0)["page_count"] == 3
+    assert req(2)["page"] == 2          # last page selectable
+    assert req(5)["page"] == 2          # out-of-range clamped to last
+    assert req(-1)["page"] == 0         # negative clamped to first

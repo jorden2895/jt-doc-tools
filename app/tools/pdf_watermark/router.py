@@ -177,6 +177,7 @@ async def preview_watermarked(
     params: str = Form(...),
     asset_id: Optional[str] = Form(None),
     temp_asset_file: Optional[UploadFile] = File(None),
+    page: int = Form(0),
 ):
     p = _parse_params(params)
     wm_path: Optional[Path] = None
@@ -201,13 +202,15 @@ async def preview_watermarked(
     png = settings.temp_dir / f"wm_{upload_id}_preview.png"
     src.write_bytes(data)
 
-    p.pages = [0]
-    service.apply_watermark(src, out, wm_path, p)
-    pdf_preview.render_page_png(out, png, 0, dpi=120)
-
     import fitz
     with fitz.open(str(src)) as doc:
         page_count = doc.page_count
+    # Clamp the requested page so the editor's page nav can't go out of range.
+    page = max(0, min(int(page), page_count - 1))
+
+    p.pages = [page]
+    service.apply_watermark(src, out, wm_path, p)
+    pdf_preview.render_page_png(out, png, page, dpi=120)
 
     for f in (src, out):
         try: f.unlink()
@@ -216,6 +219,7 @@ async def preview_watermarked(
     return {
         "preview_url": f"/tools/pdf-watermark/preview/{png.name}",
         "page_count": page_count,
+        "page": page,
     }
 
 
