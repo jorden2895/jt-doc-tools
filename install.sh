@@ -631,6 +631,37 @@ install_uv() {
 
 # --------------------------------------------------------------------- 程式碼
 
+# git 對「自更新」很重要：沒有 .git 的 tarball 安裝無法 jtdt update（使用者用
+# 網站一行安裝、機器剛好沒裝 git 時就會踩到）。安裝前若缺 git，盡力用系統套件
+# 管理員裝起來，讓安裝走 git；裝不起來仍 fallback tarball，不中斷安裝。
+ensure_git() {
+    if [ $HAS_GIT -eq 1 ]; then
+        return 0
+    fi
+    log "未偵測到 git — 嘗試安裝（讓安裝走 git 以支援後續 jtdt update）..."
+    if [ "$PLATFORM" = "linux" ]; then
+        if command -v apt-get >/dev/null 2>&1; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y git >/dev/null 2>&1 || true
+        elif command -v dnf >/dev/null 2>&1; then
+            dnf install -y git >/dev/null 2>&1 || true
+        elif command -v yum >/dev/null 2>&1; then
+            yum install -y git >/dev/null 2>&1 || true
+        elif command -v zypper >/dev/null 2>&1; then
+            zypper --non-interactive install git >/dev/null 2>&1 || true
+        elif command -v pacman >/dev/null 2>&1; then
+            pacman -Sy --noconfirm git >/dev/null 2>&1 || true
+        fi
+    elif [ "$PLATFORM" = "macos" ] && command -v brew >/dev/null 2>&1; then
+        brew install git >/dev/null 2>&1 || true
+    fi
+    if command -v git >/dev/null 2>&1; then
+        HAS_GIT=1
+        ok "git 已安裝（安裝將走 git，支援 jtdt update）"
+    else
+        warn "git 安裝失敗 — 改用 tarball 安裝（仍可運作；jtdt update 會自動用 tarball/重收編更新）"
+    fi
+}
+
 fetch_code() {
     if [ -d "$INSTALL_DIR/.git" ]; then
         log "已存在安裝，更新 git 內容 ..."
@@ -647,7 +678,31 @@ fetch_code() {
         return 0
     fi
     if [ -d "$INSTALL_DIR" ] && [ -n "$(ls -A "$INSTALL_DIR" 2>/dev/null)" ]; then
-        die "$INSTALL_DIR 已存在但不是 git repo，請先備份/移除再重跑"
+        # 既有安裝但沒有 .git（早期無 git → 走 tarball 安裝的常見情況）。
+        # 不再直接 die；改原地「收編」成 git repo 或用 tarball 覆蓋更新，
+        # 這樣 tarball 安裝也能後續 update。資料夾在別處（DATA_DIR），不受影響。
+        if [ $HAS_GIT -eq 1 ]; then
+            log "$INSTALL_DIR 已存在但非 git repo — 原地轉成 git repo 並更新 ..."
+            git config --system --add safe.directory "$INSTALL_DIR" 2>/dev/null \
+                || git config --global --add safe.directory "$INSTALL_DIR" 2>/dev/null \
+                || true
+            ( cd "$INSTALL_DIR" \
+              && git init -q \
+              && { git remote remove origin 2>/dev/null; git remote add origin "$REPO_URL"; } \
+              && git fetch --depth=1 origin "$REPO_BRANCH" \
+              && git reset --hard "origin/$REPO_BRANCH" ) \
+              || die "原地轉 git repo 失敗，請手動移除 $INSTALL_DIR（資料在 $DATA_DIR 不受影響）後重跑"
+            return 0
+        fi
+        log "$INSTALL_DIR 已存在但非 git repo 且無 git — 用 tarball 原地覆蓋更新 ..."
+        local tmp2; tmp2="$(mktemp -d)"
+        curl -fL "$REPO_URL/archive/refs/heads/${REPO_BRANCH}.tar.gz" -o "$tmp2/src.tgz" \
+            || { rm -rf "$tmp2"; die "tarball 下載失敗"; }
+        tar -xzf "$tmp2/src.tgz" -C "$tmp2"
+        local extracted2; extracted2="$(ls -d "$tmp2"/*/ | head -1)"
+        cp -a "$extracted2." "$INSTALL_DIR/"
+        rm -rf "$tmp2"
+        return 0
     fi
     mkdir -p "$INSTALL_DIR"
     if [ $HAS_GIT -eq 1 ]; then
@@ -1037,6 +1092,7 @@ main() {
     install_cjk_fonts
     install_tesseract
     install_zbar
+    ensure_git
     fetch_code
     install_uv
     setup_python

@@ -4,6 +4,19 @@
 
 ---
 
+## [1.12.11] - 2026-06-25
+
+### 修正 — 無 git 環境（網站一行安裝走 tarball）安裝的 Linux 無法更新
+
+- **症狀**：用網站一行安裝指令、機器當下沒裝 git 時，install.sh 會 fallback 走 tarball 下載原始碼 → `/opt/jt-doc-tools` 沒有 `.git`。之後 `jtdt update` 報「is not a git repo; cannot git pull」放棄；重跑 install.sh 又因「已存在但不是 git repo」直接中止 —— 兩頭卡死無法更新。
+- **修法（三處）**：
+  - `install.sh` 安裝前新增 `ensure_git`：缺 git 時用系統套件管理員（apt / dnf / yum / zypper / pacman / brew）盡力裝起來，讓安裝走 git（可後續更新）；裝不起來仍 fallback tarball。
+  - `install.sh` 的 `fetch_code` 對「既有但非 git repo」的目錄不再直接中止，改**原地收編成 git repo**（有 git）或 **tarball 原地覆蓋**（無 git）。`.venv` / `bin` / 資料皆保留（資料目錄在別處）。
+  - `jtdt update`（`app/cli.py`）對非 git repo 的安裝，若有 git 則**原地收編成 git repo** 再走正常更新流程，不再放棄。
+- **既有被卡住的安裝**：重跑一次網站一行安裝指令即可（會自動收編成 git 並更新到最新；資料不受影響）。
+
+---
+
 ## [1.12.10] - 2026-06-25
 
 ### 修正 — Windows 一行安裝在無 git 環境（走 tarball 下載）失敗

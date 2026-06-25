@@ -366,9 +366,37 @@ def svc_update() -> int:
     root = _install_root()
     owner = _install_owner(root)
     if not (root / ".git").exists():
-        print(f"Install dir {root} is not a git repo; cannot git pull", file=sys.stderr)
-        print(f"Re-run the install script to upgrade", file=sys.stderr)
-        return 1
+        # Tarball-installed (no git at install time, e.g. the website one-liner
+        # on a box without git) → adopt the dir into a git repo in place so
+        # updates work from now on. .venv / bin / data are preserved (data dir
+        # lives elsewhere; untracked files survive `git reset --hard`).
+        if not shutil.which("git"):
+            print(f"Install dir {root} is not a git repo and git is not installed.",
+                  file=sys.stderr)
+            print("Install git first, then re-run the upgrade:", file=sys.stderr)
+            if _is_windows():
+                print("  winget install --id Git.Git -e   (then re-run 'jtdt update')",
+                      file=sys.stderr)
+            else:
+                print("  sudo apt install -y git    # Debian/Ubuntu (or dnf/yum/zypper/pacman)",
+                      file=sys.stderr)
+                print("  sudo jtdt update", file=sys.stderr)
+            return 1
+        print(f"Install dir {root} is not a git repo (tarball install); adopting into git ...")
+        adopt_env = _git_env_for(root)
+        subprocess.call(["git", "-C", str(root), "init", "-q"], env=adopt_env)
+        subprocess.call(["git", "-C", str(root), "remote", "remove", "origin"],
+                        env=adopt_env, stderr=subprocess.DEVNULL)
+        rc = subprocess.call(
+            ["git", "-C", str(root), "remote", "add", "origin",
+             "https://github.com/jasoncheng7115/jt-doc-tools"], env=adopt_env)
+        subprocess.call(["git", "config", "--global", "--add", "safe.directory", str(root)],
+                        env=adopt_env, stderr=subprocess.DEVNULL)
+        if rc != 0 or not (root / ".git").exists():
+            print("Failed to convert install dir into a git repo; re-run the install script.",
+                  file=sys.stderr)
+            return 1
+        # falls through to the normal git fetch + reset --hard origin/main flow below
 
     # Capture current version
     cur = _read_version()
