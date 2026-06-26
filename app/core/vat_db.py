@@ -670,7 +670,13 @@ def _drill_where(alias: str, org_type=None, city=None, industry=None):
     if org_type:
         clauses.append(f"{a}org_type = ?"); params.append(org_type)
     if city:
-        clauses.append(f"{a}address LIKE ? ESCAPE '\\'"); params.append(_esc_like(city) + "%")
+        # 統計把地址縣市正規化成「台」，但原始地址多用「臺」(政府資料)，兩種前綴
+        # 都要比對 —— 否則點「台北市」會查不到「臺北市…」的資料。
+        base = _esc_like(city)
+        alt = base.replace("台", "臺")
+        pats = [base + "%"] + ([alt + "%"] if alt != base else [])
+        clauses.append("(" + " OR ".join(f"{a}address LIKE ? ESCAPE '\\'" for _ in pats) + ")")
+        params.extend(pats)
     if industry:
         clauses.append(f"{a}industries LIKE ? ESCAPE '\\'"); params.append("%" + _esc_like(industry) + "%")
     return ("".join(" AND " + c for c in clauses), params)

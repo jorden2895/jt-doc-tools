@@ -307,3 +307,20 @@ def test_search_stats(vat_tmp):
     assert city.get("台北市") == 1 and city.get("雲林縣") == 1
     org = {x["value"]: x["count"] for x in s["org"]}
     assert org.get("有限公司") == 2
+
+
+def test_city_drill_matches_tai_variants(vat_tmp):
+    """地址用「臺」、統計正規化成「台」，點縣市下鑽要台/臺都比對到（v1.12.22）。"""
+    vat_db.init_db()
+    c = vat_db._connect()
+    for vat, name, addr in [("11111111", "臺北銀行", "臺北市中正區"),
+                            ("22222222", "台北商行", "台北市大同區"),
+                            ("33333333", "新北企業", "新北市板橋區")]:
+        c.execute("INSERT OR REPLACE INTO vat_registry(vat,name,address,category,status) "
+                  "VALUES(?,?,?,'企業','營業中')", (vat, name, addr))
+    c.commit(); vat_db.rebuild_fts(c); c.commit(); c.close()
+    st = vat_db.search_stats("北")
+    city = {x["value"]: x["count"] for x in st["city"]}
+    assert city.get("台北市") == 2 and city.get("新北市") == 1
+    r = sorted(x["name"] for x in vat_db.search_companies("北", city="台北市"))
+    assert r == ["台北商行", "臺北銀行"]
