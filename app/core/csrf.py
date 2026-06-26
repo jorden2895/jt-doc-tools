@@ -141,7 +141,10 @@ class CSRFMiddleware:
                     return await _reject(send)
 
         set_cookie = cookie_tok is None
-        is_https = scope.get("scheme") == "https"
+        # 反向代理（nginx 終結 TLS）後 scope scheme 是 http；與 app 其他 cookie /
+        # HSTS 一致，也認 X-Forwarded-Proto 判斷 https → 在 https 站台帶 Secure。
+        xfp = _header(scope, b"x-forwarded-proto").decode("latin-1").split(",")[0].strip().lower()
+        is_https = scope.get("scheme") == "https" or xfp == "https"
 
         async def _send(message):
             if set_cookie and message["type"] == "http.response.start":

@@ -4,6 +4,12 @@
 
 ---
 
+## [1.12.27] - 2026-06-27
+
+### 修正 — CSRF cookie 在 HTTPS（反向代理）未帶 Secure flag
+
+- ZAP 掃 doc.jason.tools 發現 `jtdt_csrf` cookie 在 https 缺 Secure flag。原因：nginx 終結 TLS 後 app 收到的是 http，CSRF middleware 只看 `scope scheme` 沒看 `X-Forwarded-Proto`（app 其他 cookie / HSTS 早已正確處理）。修：`app/core/csrf.py` 的 is_https 同時判斷 `X-Forwarded-Proto: https` → https 站台正確帶 Secure。（HttpOnly 仍刻意不設 —— double-submit 需 JS 讀 token。）
+
 ## [1.12.26] - 2026-06-26
 
 ### 資安 — OWASP ZAP 掃描修正一輪（CSRF token + 升級 DOMPurify + 內建 fabric.js）

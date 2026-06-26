@@ -153,3 +153,16 @@ def test_disable_flag_bypasses(monkeypatch):
     sc = _scope(headers={"cookie": "jtdt_csrf=TOK",
                          "content-type": "application/json"})
     assert _status(_run(sc, b'{"q":"x"}')[1]) == 200   # 旗標開 → 不驗證
+
+
+def test_cookie_secure_behind_https_proxy():
+    # 反代帶 X-Forwarded-Proto: https（nginx 終結 TLS）→ cookie 應有 Secure
+    _, sent = _run(_scope(method="GET", path="/",
+                          headers={"x-forwarded-proto": "https"}))
+    assert "Secure" in (_set_cookie(sent) or "")
+
+
+def test_cookie_not_secure_on_plain_http():
+    _, sent = _run(_scope(method="GET", path="/"))
+    sc = _set_cookie(sent) or ""
+    assert "jtdt_csrf=" in sc and "Secure" not in sc
