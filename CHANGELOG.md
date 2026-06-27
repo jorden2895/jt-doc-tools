@@ -8,67 +8,67 @@
 
 ### 調整 — default-user 角色補齊 5 個無害工具 + 登入授權邊界測試
 
-- 排查時發現 `default-user`（一般使用者）角色漏掉 5 個無害文件工具:**字數統計、送件前檢核、註解整理 / 平面化 / 清除**。補進 `_NON_ADMIN_TOOL_IDS`,一般使用者現在用得到（仍只有 pdf-fill / 用印與簽名 因敏感保留給 finance/sales）。既有客戶啟動時由 `seed_builtin_roles()` 自動 top-up,不需手動。
-- 新增 `tests/test_authz_boundaries.py`（8 項）:垂直越權（非 admin → admin 頁/寫入/關認證/列 user/建 token 全擋）、工具權限（沒權限的 pdf-fill/pdf-stamp UI+後端都擋）、水平越權（B 拿不到 A 的工作區檔 / 上傳檔）。TEST_PLAN §1.7。
+- 檢視時發現 `default-user`（一般使用者）角色漏掉 5 個無害文件工具：**字數統計、送件前檢核、註解整理 / 平面化 / 清除**。補進 `_NON_ADMIN_TOOL_IDS`，一般使用者現在用得到（仍只有 pdf-fill / 用印與簽名 因敏感保留給 finance/sales）。既有客戶啟動時由 `seed_builtin_roles()` 自動 top-up，不需手動。
+- 新增 `tests/test_authz_boundaries.py`（8 項）：垂直越權（非 admin → admin 頁/寫入/關認證/列 user/建 token 全擋）、工具權限（沒權限的 pdf-fill/pdf-stamp UI+後端都擋）、水平越權（B 拿不到 A 的工作區檔 / 上傳檔）。TEST_PLAN §1.7。
 ## [1.12.40] - 2026-06-27
 
-### 強化 — 排查同類「靜默破圖 / key 不一致」問題並補強
+### 強化 — 檢視同類「無聲無息破圖 / key 不一致」問題並補強
 
-承 v1.12.39 簽名破圖,系統性排查同類問題:
-- **資產 self-heal**:`AssetManager` 載入時自動把 file_key/thumb_key 與磁碟不符者正規化成 `{id}.png`（永久修好既有資料,讓 crop/regenerate 等「直接組路徑」的程式也一致,不只靠 fallback）。
-- **資產 crop/edit 路徑**:原本直接 `_files_dir / asset.file_key` 繞過 fallback,經 self-heal 正規化後一致。
-- **工作區縮圖**:`/workspace/thumb` 對「不可渲染 / 已過期 / 毀損」檔案原本拋 HTTP 錯誤 → `<img>` 破圖;改回 **200 空白 PNG placeholder**（符合 get_thumbnail docstring 原意）。
-- **已查核安全的**:企業 logo（`custom_logo_url()` gate 在檔案存在,缺檔回空走預設,不破圖）、設定備份匯入（整個 `assets/` 目錄打包,不重配 id）、字型（以實際 path 為鍵,無 uuid 重配）。
-- 測試:工作區縮圖 placeholder + 資產 self-heal 正規化。
+承 v1.12.39 簽名破圖，系統性檢視同類問題：
+- **資產 self-heal**：`AssetManager` 載入時自動把 file_key/thumb_key 與磁碟不符者正規化成 `{id}.png`（永久修好既有資料，讓 crop/regenerate 等「直接組路徑」的程式也一致，不只靠 fallback）。
+- **資產 crop/edit 路徑**：原本直接 `_files_dir / asset.file_key` 繞過 fallback，經 self-heal 正規化後一致。
+- **工作區縮圖**：`/workspace/thumb` 對「不可渲染 / 已過期 / 毀損」檔案原本拋 HTTP 錯誤 → `<img>` 破圖；改回 **200 空白 PNG placeholder**（符合 get_thumbnail docstring 原意）。
+- **已查驗安全的**：企業 logo（`custom_logo_url()` gate 在檔案存在，缺檔回空走預設，不破圖）、設定備份匯入（整個 `assets/` 目錄打包，不重配 id）、字型（以實際 path 為鍵，無 uuid 重配）。
+- 測試：工作區縮圖 placeholder + 資產 self-heal 正規化。
 ## [1.12.39] - 2026-06-27
 
 ### 修正 — 資產匯入後印章/簽名縮圖破圖（file_key/thumb_key 與磁碟檔名不一致）
 
-- **客戶回報**:pdf-stamp 用印頁有一個簽名縮圖破圖,但 admin 資產管理裡看得到。根因:admin 資產**匯入**（合併/取代）時把圖檔以 `{new_id}.png` 寫入磁碟,但登錄沿用了 ZIP 內原始的 `file_key`/`thumb_key`（不同 uuid）→ `/assets/{id}/thumb` 用 file_key 找檔 → 404 破圖（受影響的是所有匯入過的資產,只是部分被瀏覽器快取掩蓋）。
-- 修:① import 同步 `file_key`/`thumb_key = {new_id}.png`；② `asset_manager.file_path/thumb_path` 找不到時退回 `{id}.png`（防既有殘留資料,免手動遷移即生效）。
+- **客戶回報**：pdf-stamp 用印頁有一個簽名縮圖破圖，但 admin 資產管理裡看得到。根因：admin 資產**匯入**（合併/取代）時把圖檔以 `{new_id}.png` 寫入磁碟，但登錄沿用了 ZIP 內原始的 `file_key`/`thumb_key`（不同 uuid）→ `/assets/{id}/thumb` 用 file_key 找檔 → 404 破圖（受影響的是所有匯入過的資產，只是部分被瀏覽器快取掩蓋）。
+- 修：① import 同步 `file_key`/`thumb_key = {new_id}.png`；② `asset_manager.file_path/thumb_path` 找不到時退回 `{id}.png`（防既有殘留資料，免手動遷移即生效）。
 - 測試 `tests/test_asset_thumbnails_resolve.py`（每個資產縮圖/原圖端點 200 + 匯出→合併匯入 round-trip 縮圖仍載入 + file_key 退回）。TEST_PLAN §1.6 + pdf-stamp 手動清單新增「所有縮圖實際載入無破圖」。
 ## [1.12.38] - 2026-06-27
 
-### 資安 — modal.js 改用 DOMPurify 清洗（取代手刻 sanitizer,清 CodeQL modal.js 全部告警）
+### 資安 — modal.js 改用 DOMPurify 清洗（取代手刻 sanitizer，清 CodeQL modal.js 全部告警）
 
-- v1.12.37 的手刻 sanitizer CodeQL 不認得（#124 DOM text、#125 Exception text 仍開）,且自製的 `javascript:` 檢查被判 #126「Incomplete URL scheme check」。改用專案已內含的 **DOMPurify**（`bodyEl.innerHTML = DOMPurify.sanitize(body)`,CodeQL 認得的 sanitizer barrier）。DOMPurify 改於 base.html **全站載入**（modal.js 之前）。headless 實測:正常 HTML（帳號對話框）照常渲染、onerror/javascript:/script 全剝除、無 CSP 違規。
+- v1.12.37 的手刻 sanitizer CodeQL 不認得（#124 DOM text、#125 Exception text 仍開），且自製的 `javascript:` 檢查被判 #126「Incomplete URL scheme check」。改用專案已內含的 **DOMPurify**（`bodyEl.innerHTML = DOMPurify.sanitize(body)`,CodeQL 認得的 sanitizer barrier）。DOMPurify 改於 base.html **全站載入**（modal.js 之前）。headless 實測：正常 HTML（帳號對話框）照常渲染、onerror/javascript:/script 全剝除、無 CSP 違規。
 ## [1.12.37] - 2026-06-27
 
 ### 資安 — modal.js html 模式加 sanitizer（CodeQL #121「Exception text reinterpreted as HTML」）
 
-- `static/js/modal.js` 的 `html:true` 路徑（DOMParser 後 appendChild）即使呼叫端宣告 trusted,仍**剝除可執行內容**:移除 `script/style/iframe/object/embed/link/meta/base` 元素 + 所有 `on*` 事件處理器屬性 + `javascript:` URL。縱深防禦,避免意外夾帶內容（如例外文字含 `<img onerror>`）被當 HTML 執行。headless 實測:正常 HTML 照常渲染,XSS payload（onerror / javascript: / script）全數被剝除不觸發。
+- `static/js/modal.js` 的 `html:true` 路徑（DOMParser 後 appendChild）即使呼叫端宣告 trusted，仍**剝除可執行內容**：移除 `script/style/iframe/object/embed/link/meta/base` 元素 + 所有 `on*` 事件處理器屬性 + `javascript:` URL。縱深防禦，避免意外夾帶內容（如例外文字含 `<img onerror>`）被當 HTML 執行。headless 實測：正常 HTML 照常渲染，XSS payload（onerror / javascript: / script）全數被剝除不觸發。
 ## [1.12.36] - 2026-06-27
 
 ### 修正 — 非 JSON / 壞掉的 request body 統一回 400（原 500）
 
-- 端點以 `await request.json()` 解析 body，收到非 JSON（如 multipart）或空 / 壞掉的 body 時，`json.JSONDecodeError` 原本會冒成 500（不雅且像伺服器出錯）。在 `app/main.py` 註冊**全域 JSONDecodeError 處理器**統一改回 **400「Invalid JSON body」**，一次涵蓋全部約 80 個 `request.json()` 呼叫點,不需逐一加 try/except。UI 一律送合法 JSON → 正常流程不受影響。
+- 端點以 `await request.json()` 解析 body，收到非 JSON（如 multipart）或空 / 壞掉的 body 時，`json.JSONDecodeError` 原本會冒成 500（不雅且像伺服器出錯）。在 `app/main.py` 註冊**全域 JSONDecodeError 處理器**統一改回 **400「Invalid JSON body」**，一次涵蓋全部約 80 個 `request.json()` 呼叫點，不需逐一加 try/except。UI 一律送合法 JSON → 正常流程不受影響。
 - 測試 `tests/test_json_error_handling.py`（4 項：multipart/空/壞 JSON → 400、合法 JSON 照常）。
 ## [1.12.35] - 2026-06-27
 
 ### 資安 — HTML 頁加 Cache-Control: no-store（清 ZAP「Re-examine Cache-control」Info）
 
-- 動態 HTML 回應加 `Cache-Control: no-store`（可能含敏感內容,避免瀏覽器/代理快取）。只對 `text/html` 套用,靜態資產（CSS/JS/字型/圖）維持可快取不受影響。
-- doc.jason.tools 4 個 ZAP Info 評估:`Cache-control` 本版處理;`User Controllable HTML Attribute`（next 參數）已有 `safe_next()` 防 open redirect + autoescape,屬安全誤報;`Authentication Request Identified`／`Session Management Response Identified` 是 ZAP 對正常登入/session 的識別,非弱點無法消除。
-- 全功能 headless 回歸:39 工具後端處理、25 admin 頁、264 API 端點 CSRF、工作區、40 頁 CSP 全綠。
+- 動態 HTML 回應加 `Cache-Control: no-store`（可能含敏感內容，避免瀏覽器/代理快取）。只對 `text/html` 套用，靜態資產（CSS/JS/字型/圖）維持可快取不受影響。
+- doc.jason.tools 4 個 ZAP Info 評估：`Cache-control` 本版處理；`User Controllable HTML Attribute`（next 參數）已有 `safe_next()` 防 open redirect + autoescape，屬安全誤報；`Authentication Request Identified`／`Session Management Response Identified` 是 ZAP 對正常登入/session 的識別，非弱點無法消除。
+- 全功能 headless 回歸：39 工具後端處理、25 admin 頁、264 API 端點 CSRF、工作區、40 頁 CSP 全綠。
 ## [1.12.34] - 2026-06-27
 
 ### 修正（重要）— CSRF 沒處理 XMLHttpRequest → 所有檔案上傳 403
 
-- 共用 `static/js/file_upload.js` 用 **XMLHttpRequest**（fetch 無上傳進度 spec，要進度條只能用 XHR）做檔案上傳，但 `csrf.js` 只包裝了 `window.fetch`、**沒包裝 XHR** → 上傳請求沒帶 `X-CSRF-Token` → 被 CSRF 中介層擋成 403。**自 CSRF 上線（v1.12.26）起,啟用認證下絕大多數工具的檔案上傳（PDF 字數 / 中繼資料 / 隱藏掃描 / 附件 / 壓縮 / 旋轉 / 發票 / 去識別化 …）全部失效**。
+- 共用 `static/js/file_upload.js` 用 **XMLHttpRequest**（fetch 無上傳進度 spec，要進度條只能用 XHR）做檔案上傳，但 `csrf.js` 只包裝了 `window.fetch`、**沒包裝 XHR** → 上傳請求沒帶 `X-CSRF-Token` → 被 CSRF 中介層擋成 403。**自 CSRF 上線（v1.12.26）起，啟用認證下絕大多數工具的檔案上傳（PDF 字數 / 中繼資料 / 隱藏掃描 / 附件 / 壓縮 / 旋轉 / 發票 / 去識別化 …）全部失效**。
 - 修：`csrf.js` 同步包裝 `XMLHttpRequest.prototype.open/send`，同源不安全請求自動補 `X-CSRF-Token`。headless 實測 10 個上傳工具全程 0 個 403。
 ## [1.12.33] - 2026-06-27
 
 ### 修正（重要）— CSRF 漏掉相對 URL fetch 導致部分工具 AJAX 403
 
-- `csrf.js` 的 fetch 包裝判斷「同源」時只認 `/...` 或完整 origin 的 URL，**漏掉相對路徑**（如 `fetch("api/self-entities")`）→ 那些請求沒帶 `X-CSRF-Token` → 被 CSRF 中介層擋成 403。**自 CSRF 上線（v1.12.26）起,submission-check 的新增我方實體 / 刪除案件 / 標記覆寫 / 重新檢核 / 預覽等互動功能在啟用認證下全部失效**。
+- `csrf.js` 的 fetch 包裝判斷「同源」時只認 `/...` 或完整 origin 的 URL，**漏掉相對路徑**（如 `fetch("api/self-entities")`）→ 那些請求沒帶 `X-CSRF-Token` → 被 CSRF 中介層擋成 403。**自 CSRF 上線（v1.12.26）起，submission-check 的新增我方實體 / 刪除案件 / 標記覆寫 / 重新檢核 / 預覽等互動功能在啟用認證下全部失效**。
 - 修：同源判斷改為「非絕對 URL（無 `scheme://` / `//`）一律視為同源」→ 相對路徑也會帶 token。headless 實測 submission-check 新增實體已恢復（POST 200 + 實際建立）。
 ## [1.12.32] - 2026-06-27
 
 ### 文件 — 反向代理資安強制要求（README / Pages / OPS）+ HSTS 升 1 年
 
-- **明確要求:非本機（任何網路 / 多人 / 內網 / 對外）存取一律走 nginx（或 Caddy）反向代理 + HTTPS,不要把 `:8765` 直接對網路開放**。README「隱私 / 安全要點」、GitHub Pages（docs/index.html）「不上雲」段加醒目紅框警示 + 完整含資安設定的 nginx 範例（`server_tokens off`、`X-Forwarded-Proto`、安全標頭擇一來源避免重複），安裝頁「伺服器模式」卡片也補反向代理警示。OPS.md 反向代理章節加強制警示。
+- **明確要求：非本機（任何網路 / 多人 / 內網 / 對外）存取一律走 nginx（或 Caddy）反向代理 + HTTPS，不要把 `:8765` 直接對網路開放**。README「隱私 / 安全要點」、GitHub Pages（docs/index.html）「不上雲」段加醒目紅框警示 + 完整含資安設定的 nginx 範例（`server_tokens off`、`X-Forwarded-Proto`、安全標頭擇一來源避免重複），安裝頁「伺服器模式」卡片也補反向代理警示。OPS.md 反向代理章節加強制警示。
 - 應用層 HSTS `max-age` 從 180 天升 **1 年**（`max-age=31536000`），對齊反向代理建議值。
-- 配套:doc.jason.tools 的反向代理（nginx）已設 `server_tokens off` + 移除重複的 HSTS `add_header`（HSTS 由後端統一設）→ ZAP 全頁掃 **High 0 / Medium 0 / Low 0**。
+- 配套：doc.jason.tools 的反向代理（nginx）已設 `server_tokens off` + 移除重複的 HSTS `add_header`（HSTS 由後端統一設）→ ZAP 全頁掃 **High 0 / Medium 0 / Low 0**。
 ## [1.12.31] - 2026-06-27
 
 ### 資安 — CSRF cookie 改 HttpOnly（消除 ZAP「Cookie No HttpOnly」Low）
