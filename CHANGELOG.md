@@ -4,6 +4,12 @@
 
 ---
 
+## [1.12.33] - 2026-06-27
+
+### 修正（重要）— CSRF 漏掉相對 URL fetch 導致部分工具 AJAX 403
+
+- `csrf.js` 的 fetch 包裝判斷「同源」時只認 `/...` 或完整 origin 的 URL，**漏掉相對路徑**（如 `fetch("api/self-entities")`）→ 那些請求沒帶 `X-CSRF-Token` → 被 CSRF 中介層擋成 403。**自 CSRF 上線（v1.12.26）起,submission-check 的新增我方實體 / 刪除案件 / 標記覆寫 / 重新檢核 / 預覽等互動功能在啟用認證下全部失效**。
+- 修：同源判斷改為「非絕對 URL（無 `scheme://` / `//`）一律視為同源」→ 相對路徑也會帶 token。headless 實測 submission-check 新增實體已恢復（POST 200 + 實際建立）。
 ## [1.12.32] - 2026-06-27
 
 ### 文件 — 反向代理資安強制要求（README / Pages / OPS）+ HSTS 升 1 年

@@ -21,8 +21,10 @@
         || (input && typeof input === 'object' && input.method) || 'GET').toUpperCase();
       var url = (typeof input === 'string') ? input
         : (input && input.url) || '';
-      var sameOrigin = url === '' || url.charAt(0) === '/'
-        || url.indexOf(window.location.origin) === 0;
+      // 同源 = 相對 URL（'api/x'、'/x'、''、'./x'…，非絕對也非協定相對）
+      //        或 絕對且開頭是本站 origin。涵蓋相對路徑（之前漏掉 'api/x' → 403）。
+      var isAbsolute = /^([a-z][a-z0-9+.-]*:)?\/\//i.test(url);
+      var sameOrigin = !isAbsolute || url.indexOf(window.location.origin) === 0;
       if (sameOrigin && ['POST', 'PUT', 'PATCH', 'DELETE'].indexOf(method) >= 0) {
         var headers = new Headers(
           init.headers || (input && typeof input === 'object' && input.headers) || {});
