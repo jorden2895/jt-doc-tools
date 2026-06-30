@@ -444,14 +444,18 @@ def build_auth_router(templates) -> APIRouter:
 
     @router.get("/groups", response_class=HTMLResponse)
     async def groups_page(request: Request):
+        from ..core import auth_settings
         groups = group_manager.list_groups()
         all_users = user_manager.list_users()
         all_roles = roles.list_roles()
+        backend = (auth_settings.get() or {}).get("backend", "off")
         return templates.TemplateResponse(request, "admin_groups.html", {
             "request": request,
             "groups": groups,
             "all_users": all_users,
             "all_roles": all_roles,
+            "auth_backend": backend,
+            "is_directory_backend": backend in ("ldap", "ad"),
         })
 
     @router.post("/groups/create")
@@ -469,6 +473,27 @@ def build_auth_router(templates) -> APIRouter:
             target=body.get("name", ""), details={"new_group_id": gid},
         )
         return {"ok": True, "id": gid}
+
+    @router.post("/groups/sync-ldap")
+    async def groups_sync_ldap(request: Request):
+        """從 AD / LDAP 目錄列舉**所有**群組,鏡射進本地群組清單（不動成員）。
+        解決預設「只看得到曾登入使用者所屬群組」的 JIT 限制 → admin 可預先把
+        權限指派給任何目錄群組。"""
+        from ..core import auth_settings, auth_ldap
+        backend = (auth_settings.get() or {}).get("backend", "off")
+        if backend not in ("ldap", "ad"):
+            raise HTTPException(400, "目前認證後端不是 LDAP / AD，無法同步目錄群組。")
+        try:
+            result = auth_ldap.sync_all_groups()
+        except auth_ldap.AuthError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, f"同步失敗：{type(e).__name__}: {e}")
+        audit_db.log_event(
+            "group_sync_ldap", username=_actor(request), ip=_client_ip(request),
+            details=result,
+        )
+        return {"ok": True, **result}
 
     @router.post("/groups/{gid}/update")
     async def groups_update(gid: int, request: Request):

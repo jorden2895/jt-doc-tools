@@ -1463,22 +1463,24 @@ def build_router(templates) -> APIRouter:
 
     @router.post("/vat-db/upload")
     async def vat_db_upload(file: UploadFile = File(...)):
-        """手動上傳 CSV 或 ZIP — 200MB 上限。"""
+        """手動上傳 CSV 或 ZIP — 1 GB 上限。**背景**解析 + 建索引（170 萬筆要數
+        分鐘），立刻 return，前端透過 /admin/vat-db/progress 輪詢,網頁不卡住。"""
         from ..core import vat_db as _vatdb
         data = await file.read()
         if not data:
             raise HTTPException(400, "空檔案")
         if len(data) > 1024 * 1024 * 1024:  # 1 GB hard cap (政府資料就大)
             raise HTTPException(413, "檔案超過 1 GB 上限")
-        try:
-            result = _vatdb.ingest_archive_or_csv(
-                data, source=f"manual:{file.filename or 'upload'}",
-            )
-        except ValueError as e:
-            raise HTTPException(400, f"資料格式錯誤：{e}")
-        except Exception as e:
-            raise HTTPException(500, f"匯入失敗：{e}")
-        return {"ok": True, **result}
+        status = _vatdb.trigger_ingest_async(
+            data, source=f"manual:{file.filename or 'upload'}")
+        return {
+            "ok": True,
+            "status": status,                 # 'started' or 'already_running'
+            "started": status == "started",
+            "message": ("已開始背景匯入，請看下方進度。"
+                        if status == "started"
+                        else "已有背景工作進行中，請稍候。"),
+        }
 
     @router.post("/vat-db/auto-download")
     async def vat_db_auto_download():

@@ -987,6 +987,55 @@ def _run_download_safe() -> None:
     except Exception:
         logging.getLogger("vat_db.download").exception(
             "download_and_ingest_all in background thread crashed")
+
+
+def trigger_ingest_async(data: bytes, source: str = "manual_upload") -> str:
+    """背景匯入「使用者上傳的檔」（ZIP/CSV）+ 建 FTS 索引,立刻 return,不阻塞
+    請求 → 網頁不卡住（170 萬筆解析 + 建索引要數分鐘）。前端透過
+    /admin/vat-db/progress 輪詢進度。與下載共用同一背景 slot（同時只跑一個）。"""
+    global _download_thread
+    with _download_lock:
+        if _download_thread is not None and _download_thread.is_alive():
+            return "already_running"
+        _download_thread = threading.Thread(
+            target=_run_ingest_safe, args=(data, source),
+            name="vat-db-ingest", daemon=True,
+        )
+        _download_thread.start()
+        return "started"
+
+
+def _run_ingest_safe(data: bytes, source: str) -> None:
+    """Thread target — 解析上傳檔 + 建索引 + 回報進度,exception 不漏出 thread。"""
+    import logging
+    try:
+        _reset_progress("parsing_main")
+        result = ingest_archive_or_csv(data, source=source, build_index=False)
+        _write_progress(stage="indexing")
+        try:
+            _ic = _connect()
+            try:
+                rebuild_fts(_ic)
+                _cache_category_stats(_ic)
+                _ic.commit()
+            finally:
+                _ic.close()
+        except Exception:
+            pass
+        final_meta = get_meta()
+        out = {"records": final_meta["record_count"],
+               "main_records": result.get("records", 0),
+               "source_used": {"name": source}, "supplements": []}
+        _write_progress(stage="done", records=out["records"],
+                        main_records=out["main_records"],
+                        source_used_name=source, supplements_summary=[])
+        try:
+            save_last_result(out)
+        except Exception:
+            pass
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("vat_db.ingest").exception("background ingest crashed")
+        _write_progress(stage="error", error=str(e))
 _SCHED_TICK_SEC = 300  # 每 5 分鐘 check 一次（hour-precision 觸發只要 < 1 hr 即可）
 
 

@@ -719,10 +719,12 @@ _btnAutoDl.addEventListener('click', async () => {
 (function _detectOngoingProgress() {
   fetch('/admin/vat-db/progress').then(r => r.ok ? r.json() : null).then(j => {
     if (!j) return;
-    const live = ['downloading_main', 'parsing_main',
+    const live = ['downloading_main', 'parsing_main', 'indexing',
                   'downloading_supplement', 'parsing_supplement', 'starting'];
     if (live.includes(j.stage)) {
-      setStatus('偵測到下載進行中（可能由其他 admin 觸發）…', 'busy');
+      _autoDlInFlight = true;
+      setStatus('偵測到資料更新進行中（下載或匯入，可能由其他 admin 觸發）…', 'busy');
+      $('progressWrap').style.display = 'block';
       _startProgressPolling();
     }
   }).catch(() => {});
@@ -732,17 +734,29 @@ $('fileInput').addEventListener('change', async e => {
   const f = e.target.files && e.target.files[0];
   if (!f) return;
   e.target.value = '';
-  setStatus(`上傳 ${f.name} 中…`, 'busy');
+  if (_autoDlInFlight) { setStatus('已有背景工作進行中，請稍候。', 'busy'); return; }
   const fd = new FormData();
   fd.append('file', f);
+  // 背景匯入：上傳後立刻 return，由進度輪詢處理解析 + 建索引（網頁不卡住）
+  _autoDlInFlight = true;
+  setStatus(`上傳 ${f.name}，背景匯入中…解析 + 建索引約數分鐘，本頁仍可操作`, 'busy');
+  $('progressWrap').style.display = 'block';
+  $('progressBar').classList.add('indeterminate');
+  $('progressFill').style.width = '20%';
+  $('progressMeta').innerHTML = '<span class="vd-spinner sm"></span> 上傳中…';
+  _startProgressPolling();   // poll 偵測到 done/error 會自動 _finalizeDownload
   try {
     const r = await fetch('/admin/vat-db/upload', { method: 'POST', body: fd });
     const j = await r.json();
     if (!r.ok) throw new Error(j.detail || `HTTP ${r.status}`);
-    setStatus(`✓ 匯入 ${j.records.toLocaleString('en-US')} 筆 (來源：${j.source})`, 'ok');
-    refreshInfo();
+    if (!j.started && j.status === 'already_running') {
+      setStatus('已有背景工作進行中，沿用其進度。', 'busy');
+    }
+    // started → 背景 thread 在跑，後續由 polling + _finalizeDownload 處理
   } catch (err) {
+    _autoDlInFlight = false;
     setStatus('上傳失敗：' + err.message, 'err');
+    _stopProgressPolling();
   }
 });
 

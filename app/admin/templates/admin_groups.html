@@ -13,6 +13,15 @@
   </form>
 </details>
 
+{% if is_directory_backend %}
+<div class="panel">
+  <b>從 {{ auth_backend|upper }} 目錄同步群組</b>
+  <p class="muted">預設只有「使用者登入時」才把該人所屬群組帶進來，所以一開始只看得到登入過的人所屬的少數群組。按這裡可一次列舉目錄內所有群組，方便先指派權限（不會更動成員）。</p>
+  <button class="btn" type="button" id="btnSyncDir">{{ icon('refresh', size=14) }} 同步目錄群組</button>
+  <span id="syncDirMsg" class="muted"></span>
+</div>
+{% endif %}
+
 <div class="panel">
   <h2 data-s="s53896af7">群組清單（{{ groups|length }}）</h2>
   <table class="grp-table">
@@ -269,5 +278,25 @@ document.querySelectorAll('.grp-table button').forEach(btn => {
     }
   });
 });
+
+// 從 AD / LDAP 目錄同步所有群組
+const _btnSyncDir = document.getElementById('btnSyncDir');
+if (_btnSyncDir) {
+  _btnSyncDir.addEventListener('click', async () => {
+    const msg = document.getElementById('syncDirMsg');
+    _btnSyncDir.disabled = true;
+    msg.textContent = ' 同步中…（目錄大時可能數秒）';
+    try {
+      const r = await fetch('/admin/groups/sync-ldap', { method: 'POST' });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+      msg.textContent = ` ✓ 新增 ${j.synced}、更新 ${j.updated}，目錄共 ${j.total_seen} 個群組，頁面即將重整…`;
+      setTimeout(() => location.reload(), 1400);
+    } catch (e) {
+      msg.textContent = ' ✗ ' + e.message;
+      _btnSyncDir.disabled = false;
+    }
+  });
+}
 </script>
 {% endblock %}

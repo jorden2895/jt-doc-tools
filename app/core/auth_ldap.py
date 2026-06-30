@@ -387,3 +387,75 @@ def get_ou_subjects_for_dn(dn: str) -> list[tuple[str, str]]:
             ou_dn = ",".join(parts[i:])
             out.append(("ou", ou_dn))
     return out
+
+
+def sync_all_groups() -> dict:
+    """列舉目錄內**所有**群組,鏡射進本地 `groups` 表（不動成員關係）。
+
+    解決「只看得到曾登入使用者所屬群組」的 JIT 限制 —— 讓 admin 在使用者登入前
+    就能把權限指派給任何 AD / LDAP 群組。用 paged_search 處理 AD 1000 筆上限。
+    回 {synced, updated, total_seen, sample}。
+    """
+    from ldap3 import Connection, SUBTREE
+
+    s = auth_settings.get()
+    backend = s.get("backend", "ldap")
+    cfg = s.get("ldap", {})
+    svc_dn = (cfg.get("service_dn") or "").strip()
+    svc_pw = cfg.get("service_password") or ""
+    # 可獨立設 group_search_base / filter；預設沿用使用者 base + 常見群組 objectClass。
+    base = (cfg.get("group_search_base")
+            or cfg.get("user_search_base") or "").strip()
+    gfilter = (cfg.get("group_search_filter")
+               or "(|(objectClass=group)(objectClass=groupOfNames)"
+                  "(objectClass=groupOfUniqueNames)(objectClass=posixGroup))")
+    name_attr = cfg.get("group_name_attr", "cn")
+    if not svc_dn or not svc_pw or not base:
+        raise AuthError("Service Account / 搜尋 base DN / Service 密碼 都需先填妥")
+    if "(" in base or ")" in base:
+        raise AuthError("「搜尋 base DN」不能包含 ( 或 )；那是 filter 語法。")
+
+    server = _build_server(cfg)
+    seen: list[tuple[str, str]] = []
+    try:
+        with Connection(server, user=svc_dn, password=svc_pw,
+                        auto_bind=True, raise_exceptions=True) as conn:
+            entries = conn.extend.standard.paged_search(
+                search_base=base, search_filter=gfilter,
+                search_scope=SUBTREE, attributes=[name_attr],
+                paged_size=500, generator=False)
+            for e in entries:
+                dn = e.get("dn") or ""
+                if not dn or e.get("type") != "searchResEntry":
+                    continue
+                nm = (e.get("attributes", {}) or {}).get(name_attr)
+                if isinstance(nm, list):
+                    nm = nm[0] if nm else None
+                seen.append((dn, str(nm) if nm else (_cn_from_dn(dn) or dn)))
+    except Exception as exc:
+        raise AuthError(f"列舉群組失敗：{type(exc).__name__}: {exc}")
+
+    conn_db = auth_db.conn()
+    synced = 0
+    updated = 0
+    with db.tx(conn_db):
+        for dn, nm in seen:
+            row = conn_db.execute(
+                "SELECT id, name FROM groups WHERE source=? AND external_dn=?",
+                (backend, dn)).fetchone()
+            if row:
+                if nm and row["name"] != nm:
+                    conn_db.execute("UPDATE groups SET name=? WHERE id=?",
+                                    (nm, row["id"]))
+                    updated += 1
+            else:
+                conn_db.execute(
+                    "INSERT INTO groups(name, source, external_dn, created_at) "
+                    "VALUES (?,?,?,?)", (nm, backend, dn, time.time()))
+                synced += 1
+    permissions.invalidate_cache()
+    audit_db.log_event("ldap_group_sync",
+                       details={"synced": synced, "updated": updated,
+                                "total_seen": len(seen)})
+    return {"synced": synced, "updated": updated, "total_seen": len(seen),
+            "sample": [nm for _, nm in seen[:12]]}
