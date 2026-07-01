@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% from "components/icons.html" import icon %}
+{% block title %}目錄瀏覽 · {{ app_name }}{% endblock %}
+{% block content %}
+<h1>{{ icon('building', size=22) }} 目錄瀏覽（{{ auth_backend|upper if is_directory_backend else 'AD/LDAP' }}）</h1>
+
+{% if not is_directory_backend %}
+<div class="panel"><p class="muted">目前認證後端不是 LDAP / AD。到「認證設定」啟用後即可用樹狀瀏覽 OU、挑選使用者、把權限指派給 OU。</p></div>
+{% else %}
+<div class="panel">
+  <p class="muted">左側展開 OU 樹,點某個 OU 看它底下的使用者（<span class="dir-in-legend">綠底 = 已登入過本系統</span>）。把角色<b>指派給 OU</b> → 該 OU（含子 OU）下所有使用者登入時即生效,不必等他們先登入。</p>
+  <div class="dir-wrap">
+    <div class="dir-tree" id="dirTree"><div class="dir-loading">載入目錄樹…</div></div>
+    <div class="dir-detail" id="dirDetail">
+      <p class="muted">← 從左側點一個 OU</p>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<style nonce="{{ request.state.csp_nonce }}">
+  .dir-wrap { display:flex; gap:14px; align-items:flex-start; margin-top:8px; }
+  .dir-tree { flex:0 0 320px; max-width:44%; max-height:560px; overflow:auto; border:1px solid #e5e7eb; border-radius:8px; padding:6px; background:#fff; }
+  .dir-detail { flex:1; min-width:0; border:1px solid #e5e7eb; border-radius:8px; padding:12px 14px; background:#fff; min-height:200px; }
+  .dir-loading, .dir-empty { color:#9ca3af; padding:12px; font-size:13px; }
+  .tn { }
+  .tn-row { display:flex; align-items:center; gap:4px; padding:3px 4px; border-radius:5px; cursor:pointer; font-size:13px; white-space:nowrap; }
+  .tn-row:hover { background:#f3f4f6; }
+  .tn-row.is-sel { background:#eef2ff; font-weight:600; }
+  .tn-toggle { width:16px; text-align:center; color:#6b7280; user-select:none; }
+  .tn-name { overflow:hidden; text-overflow:ellipsis; }
+  .tn-hasrole { margin-left:4px; font-size:10px; color:#4f46e5; }
+  .tn-children { margin-left:14px; border-left:1px dashed #e5e7eb; padding-left:2px; }
+  .dir-detail h3 { margin:0 0 4px; font-size:15px; }
+  .dir-dn { font-size:11px; color:#9ca3af; word-break:break-all; margin-bottom:8px; }
+  .dir-roles-box { background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin:8px 0; }
+  .dir-role-chk { display:inline-flex; align-items:center; gap:5px; margin:2px 10px 2px 0; font-size:13px; font-weight:normal; cursor:pointer; }
+  .dir-utable { width:100%; border-collapse:collapse; font-size:13px; margin-top:6px; }
+  .dir-utable td { padding:5px 8px; border-bottom:1px solid #f1f5f9; }
+  .dir-utable tr.is-local { background:#f0fdf4; box-shadow: inset 3px 0 0 #22c55e; }
+  .dir-ubadge { font-size:11px; font-weight:600; padding:1px 8px; border-radius:10px; background:#dcfce7; color:#15803d; }
+  .du-bcell { text-align:right; white-space:nowrap; }
+  .dir-in-legend { background:#f0fdf4; box-shadow: inset 3px 0 0 #22c55e; padding:0 6px; border-radius:3px; }
+  .dir-filters { display:flex; gap:6px; margin:6px 0; flex-wrap:wrap; }
+  .dir-fbtn.is-active { background:#4f46e5; color:#fff; border-color:#4f46e5; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+{% if is_directory_backend %}
+<script nonce="{{ request.state.csp_nonce }}">
+const ALL_ROLES = {{ all_roles|tojson }};
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+const $ = id => document.getElementById(id);
+
+// ---- OU tree ----
+async function loadChildren(dn) {
+  const r = await fetch('/admin/directory/tree?dn=' + encodeURIComponent(dn || ''));
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+  return j.nodes || [];
+}
+function makeNode(node) {
+  const wrap = document.createElement('div'); wrap.className = 'tn';
+  const row = document.createElement('div'); row.className = 'tn-row'; row.dataset.dn = node.dn;
+  const tog = document.createElement('span'); tog.className = 'tn-toggle'; tog.textContent = '▸';
+  const nm = document.createElement('span'); nm.className = 'tn-name'; nm.textContent = node.name;
+  row.appendChild(tog); row.appendChild(nm);
+  if (node.roles && node.roles.length) {
+    const b = document.createElement('span'); b.className = 'tn-hasrole'; b.textContent = '● 有權限'; row.appendChild(b);
+  }
+  const kids = document.createElement('div'); kids.className = 'tn-children'; kids.style.display = 'none';
+  let loaded = false;
+  tog.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (kids.style.display === 'none') {
+      kids.style.display = 'block'; tog.textContent = '▾';
+      if (!loaded) {
+        loaded = true; kids.innerHTML = '<div class="dir-loading">載入…</div>';
+        try {
+          const ch = await loadChildren(node.dn);
+          kids.innerHTML = '';
+          if (!ch.length) kids.innerHTML = '<div class="dir-empty">（無子 OU）</div>';
+          ch.forEach(c => kids.appendChild(makeNode(c)));
+        } catch (err) { kids.innerHTML = '<div class="dir-empty">✗ ' + esc(err.message) + '</div>'; }
+      }
+    } else { kids.style.display = 'none'; tog.textContent = '▸'; }
+  });
+  row.addEventListener('click', () => {
+    document.querySelectorAll('.tn-row.is-sel').forEach(x => x.classList.remove('is-sel'));
+    row.classList.add('is-sel');
+    openOU(node.dn, node.name);
+  });
+  wrap.appendChild(row); wrap.appendChild(kids);
+  return wrap;
+}
+(async function initTree() {
+  try {
+    const roots = await loadChildren('');
+    const tree = $('dirTree'); tree.innerHTML = '';
+    if (!roots.length) { tree.innerHTML = '<div class="dir-empty">根節點下沒有 OU（可在認證設定填 directory_root_base）</div>'; return; }
+    roots.forEach(n => tree.appendChild(makeNode(n)));
+  } catch (e) { $('dirTree').innerHTML = '<div class="dir-empty">✗ ' + esc(e.message) + '</div>'; }
+})();
+
+// ---- OU detail: users + role assignment ----
+let _ouUsers = [], _ouFilter = 'all', _curDn = '', _curName = '';
+function renderUsers() {
+  const tbody = $('duBody'); if (!tbody) return;
+  const q = ($('duSearch').value || '').trim().toLowerCase();
+  const rows = _ouUsers.filter(u => {
+    if (_ouFilter === 'in' && !u.local) return false;
+    if (_ouFilter === 'out' && u.local) return false;
+    if (q && !((u.name||'').toLowerCase().includes(q) || (u.login||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if (!rows.length) { tbody.innerHTML = '<tr><td class="dir-empty">此 OU 下沒有符合的使用者</td></tr>'; return; }
+  tbody.innerHTML = rows.map(u =>
+    `<tr class="${u.local?'is-local':''}"><td><b>${esc(u.name)}</b> <span class="muted">${esc(u.login||'')}</span></td>` +
+    `<td class="du-bcell">${u.local?'<span class="dir-ubadge">✓ 已登入</span>':''}</td></tr>`
+  ).join('');
+}
+async function openOU(dn, name) {
+  _curDn = dn; _curName = name;
+  const box = $('dirDetail');
+  box.innerHTML = '<p class="muted">查詢目錄中…</p>';
+  let j;
+  try {
+    const r = await fetch('/admin/directory/users?dn=' + encodeURIComponent(dn));
+    j = await r.json();
+    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+  } catch (e) { box.innerHTML = '<p class="dir-empty">✗ ' + esc(e.message) + '</p>'; return; }
+  _ouUsers = j.users || []; _ouFilter = 'all';
+  const roleChks = ALL_ROLES.map(role => {
+    const rid = role.id, on = (j.ou_roles||[]).includes(rid);
+    return `<label class="dir-role-chk"><input type="checkbox" class="du-role" value="${esc(rid)}" ${on?'checked':''}> ${esc(role.display_name||rid)}</label>`;
+  }).join('');
+  box.innerHTML =
+    `<h3>${esc(name)}</h3><div class="dir-dn">${esc(dn)}</div>` +
+    `<div class="dir-roles-box"><b>指派角色給此 OU</b>（含子 OU 全部使用者登入時生效）<br>${roleChks}<br>` +
+    `<button class="btn btn-primary btn-small" id="duSaveRoles" type="button">{{ icon('save', size=12) }} 儲存角色</button> <span class="muted" id="duRoleMsg"></span></div>` +
+    `<div><b>此 OU 直屬使用者</b>（共 ${j.count}，已登入 ${j.local_count} / 未登入 ${j.not_local_count}）</div>` +
+    `<div class="dir-filters"><button class="btn btn-small dir-fbtn is-active" data-f="all" type="button">全部</button>` +
+    `<button class="btn btn-small dir-fbtn" data-f="in" type="button">已登入</button>` +
+    `<button class="btn btn-small dir-fbtn" data-f="out" type="button">未登入</button></div>` +
+    `<input class="field" id="duSearch" type="search" placeholder="篩選（帳號或姓名）…">` +
+    `<table class="dir-utable"><tbody id="duBody"></tbody></table>`;
+  renderUsers();
+  $('duSearch').addEventListener('input', renderUsers);
+  box.querySelectorAll('.dir-fbtn').forEach(b => b.addEventListener('click', () => {
+    _ouFilter = b.dataset.f;
+    box.querySelectorAll('.dir-fbtn').forEach(x => x.classList.toggle('is-active', x === b));
+    renderUsers();
+  }));
+  $('duSaveRoles').addEventListener('click', async () => {
+    const roles = Array.from(box.querySelectorAll('.du-role:checked')).map(c => c.value);
+    const msg = $('duRoleMsg'); msg.textContent = ' 儲存中…';
+    try {
+      const r = await fetch('/admin/directory/ou-roles', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ dn: _curDn, roles })
+      });
+      const jj = await r.json();
+      if (!r.ok) throw new Error(jj.detail || ('HTTP ' + r.status));
+      msg.textContent = ` ✓ 已儲存（${roles.length} 個角色）`;
+    } catch (e) { msg.textContent = ' ✗ ' + e.message; }
+  });
+}
+</script>
+{% endif %}
+{% endblock %}

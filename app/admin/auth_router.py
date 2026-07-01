@@ -576,6 +576,86 @@ def build_auth_router(templates) -> APIRouter:
         )
         return {"ok": True}
 
+    # ---------- /admin/directory (AD/LDAP OU treeview → 指派權限) ----------
+
+    @router.get("/directory", response_class=HTMLResponse)
+    async def directory_page(request: Request):
+        from ..core import auth_settings, roles as _roles
+        backend = (auth_settings.get() or {}).get("backend", "off")
+        return templates.TemplateResponse(request, "admin_directory.html", {
+            "request": request,
+            "auth_backend": backend,
+            "is_directory_backend": backend in ("ldap", "ad"),
+            "all_roles": _roles.list_roles(),
+        })
+
+    def _require_dir_backend():
+        from ..core import auth_settings
+        if (auth_settings.get() or {}).get("backend", "off") not in ("ldap", "ad"):
+            raise HTTPException(400, "此功能僅適用 LDAP / AD 後端。")
+
+    @router.get("/directory/tree")
+    async def directory_tree(request: Request, dn: str = ""):
+        """列某節點的直接子 OU / 容器（treeview 逐層展開）。dn 空 = 根。"""
+        from ..core import auth_ldap
+        _require_dir_backend()
+        try:
+            nodes = auth_ldap.list_ou_children(dn)
+        except auth_ldap.AuthError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, f"查詢失敗：{type(e).__name__}: {e}")
+        # 附上每個 OU 目前指派的角色（讓樹上可看到哪些 OU 有權限）
+        for n in nodes:
+            n["roles"] = permissions.list_roles_for_subject("ou", n["dn"])
+        return {"ok": True, "root": (dn or auth_ldap._dir_root_base()), "nodes": nodes}
+
+    @router.get("/directory/users")
+    async def directory_users(request: Request, dn: str, recursive: int = 0):
+        """列某 OU 下的使用者（標註已登入過本系統者）+ 該 OU 目前的角色。"""
+        from ..core import auth_ldap
+        _require_dir_backend()
+        if not dn:
+            raise HTTPException(400, "缺少 OU DN")
+        try:
+            users = auth_ldap.list_ou_users(dn, recursive=bool(recursive))
+        except auth_ldap.AuthError as e:
+            raise HTTPException(400, str(e))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(500, f"查詢失敗：{type(e).__name__}: {e}")
+        local_dns, local_logins = set(), set()
+        for u in user_manager.list_users():
+            if u.get("source") in ("ldap", "ad"):
+                if u.get("external_dn"):
+                    local_dns.add(str(u["external_dn"]).strip().lower())
+                if u.get("username"):
+                    un = str(u["username"]).strip().lower()
+                    local_logins.add(un); local_logins.add(un.split("@", 1)[0])
+        lc = 0
+        for m in users:
+            m["local"] = (m.get("dn", "").strip().lower() in local_dns
+                          or m.get("login", "").strip().lower() in local_logins)
+            lc += 1 if m["local"] else 0
+        return {"ok": True, "ou": dn, "count": len(users),
+                "local_count": lc, "not_local_count": len(users) - lc,
+                "ou_roles": permissions.list_roles_for_subject("ou", dn),
+                "users": users}
+
+    @router.post("/directory/ou-roles")
+    async def directory_ou_roles(request: Request):
+        """指派角色給某 OU（subject_type=ou）。該 OU 下所有使用者登入時即生效。"""
+        _require_dir_backend()
+        body = await request.json()
+        dn = str((body or {}).get("dn") or "").strip()
+        role_ids = list((body or {}).get("roles") or [])
+        if not dn:
+            raise HTTPException(400, "缺少 OU DN")
+        permissions.set_subject_roles("ou", dn, role_ids)
+        audit_db.log_event("perm_ou_set", username=_actor(request),
+                           ip=_client_ip(request), target=dn,
+                           details={"roles": role_ids})
+        return {"ok": True, "dn": dn, "roles": role_ids}
+
     # ---------- /admin/roles ----------
 
     @router.get("/roles", response_class=HTMLResponse)

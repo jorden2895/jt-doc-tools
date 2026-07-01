@@ -525,3 +525,95 @@ def get_group_members(group_dn: str) -> list[dict]:
         raise AuthError(f"查詢目錄成員失敗：{type(exc).__name__}: {exc}")
     out.sort(key=lambda x: (x["name"] or "").lower())
     return out
+
+
+def _dir_root_base() -> str:
+    cfg = auth_settings.get().get("ldap", {})
+    return (cfg.get("directory_root_base")
+            or cfg.get("user_search_base") or "").strip()
+
+
+def list_ou_children(parent_dn: str = "") -> list[dict]:
+    """列某節點的**直接子 OU / 容器**（給 treeview 逐層展開）。parent_dn 空 = 根
+    （directory_root_base 或 user_search_base）。回 [{dn, name, has_children}]。"""
+    from ldap3 import Connection, LEVEL
+    s = auth_settings.get()
+    cfg = s.get("ldap", {})
+    svc_dn = (cfg.get("service_dn") or "").strip()
+    svc_pw = cfg.get("service_password") or ""
+    base = (parent_dn or "").strip() or _dir_root_base()
+    if not svc_dn or not svc_pw or not base:
+        raise AuthError("Service Account / 目錄 base / 密碼 都需先填妥")
+    if "(" in base or ")" in base:
+        raise AuthError("節點 DN 不合法。")
+    node_filter = (cfg.get("directory_node_filter")
+                   or "(|(objectClass=organizationalUnit)(objectClass=container)"
+                      "(objectClass=organizationalRole))")
+    server = _build_server(cfg)
+    out: list[dict] = []
+    try:
+        with Connection(server, user=svc_dn, password=svc_pw,
+                        auto_bind=True, raise_exceptions=True) as conn:
+            entries = conn.extend.standard.paged_search(
+                search_base=base, search_filter=node_filter,
+                search_scope=LEVEL, attributes=["ou", "cn"],
+                paged_size=500, generator=False)
+            for e in entries:
+                dn = e.get("dn") or ""
+                if not dn or e.get("type") != "searchResEntry":
+                    continue
+                a = e.get("attributes", {}) or {}
+                nm = a.get("ou") or a.get("cn")
+                if isinstance(nm, list):
+                    nm = nm[0] if nm else None
+                out.append({"dn": dn, "name": str(nm) if nm else (_cn_from_dn(dn) or dn),
+                            "has_children": True})  # 展開時再確認,先給展開箭頭
+    except Exception as exc:  # noqa: BLE001
+        raise AuthError(f"列目錄節點失敗：{type(exc).__name__}: {exc}")
+    out.sort(key=lambda x: (x["name"] or "").lower())
+    return out
+
+
+def list_ou_users(ou_dn: str, recursive: bool = False) -> list[dict]:
+    """列某 OU 底下的使用者。recursive=False 只列直屬（LEVEL）。
+    回 [{name, login, dn}]（未標本地,由端點標）。"""
+    from ldap3 import Connection, LEVEL, SUBTREE
+    s = auth_settings.get()
+    cfg = s.get("ldap", {})
+    svc_dn = (cfg.get("service_dn") or "").strip()
+    svc_pw = cfg.get("service_password") or ""
+    ou_dn = (ou_dn or "").strip()
+    if not svc_dn or not svc_pw or not ou_dn:
+        raise AuthError("Service Account / OU DN / 密碼 都需先填妥")
+    if "(" in ou_dn or ")" in ou_dn:
+        raise AuthError("OU DN 不合法。")
+    user_filter = (cfg.get("directory_user_filter")
+                   or "(&(objectCategory=person)(objectClass=user))")
+    disp_attr = cfg.get("displayname_attr", "displayName")
+    login_attr = cfg.get("username_attr", "sAMAccountName")
+    server = _build_server(cfg)
+    out: list[dict] = []
+    try:
+        with Connection(server, user=svc_dn, password=svc_pw,
+                        auto_bind=True, raise_exceptions=True) as conn:
+            entries = conn.extend.standard.paged_search(
+                search_base=ou_dn, search_filter=user_filter,
+                search_scope=(SUBTREE if recursive else LEVEL),
+                attributes=[disp_attr, login_attr],
+                paged_size=500, generator=False)
+            for e in entries:
+                dn = e.get("dn") or ""
+                if not dn or e.get("type") != "searchResEntry":
+                    continue
+                a = e.get("attributes", {}) or {}
+                def _one(v):
+                    return (v[0] if isinstance(v, list) and v else
+                            (v if isinstance(v, str) else None))
+                name = _one(a.get(disp_attr))
+                login = _one(a.get(login_attr))
+                out.append({"name": str(name) if name else (_cn_from_dn(dn) or dn),
+                            "login": str(login) if login else "", "dn": dn})
+    except Exception as exc:  # noqa: BLE001
+        raise AuthError(f"列 OU 使用者失敗：{type(exc).__name__}: {exc}")
+    out.sort(key=lambda x: (x["name"] or "").lower())
+    return out

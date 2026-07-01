@@ -14,7 +14,7 @@ from .core.job_manager import job_manager
 from .logging_setup import get_logger, setup_logging
 from .tool_registry import discover_tools, mount_tools
 
-VERSION = "1.12.48"
+VERSION = "1.12.49"
 
 setup_logging("DEBUG" if settings.debug else "INFO")
 logger = get_logger(__name__)
@@ -308,6 +308,9 @@ templates.env.globals["nav_settings"] = [
     {"icon": "gear", "name": "權限矩陣", "description": "使用者 / 群組 × 工具 對應",
      "url": "/admin/permissions", "requires_auth": True,
      "keywords": "permission permissions matrix grant 權限 矩陣"},
+    {"icon": "building", "name": "目錄瀏覽", "description": "AD/LDAP OU 樹 → 挑 OU 指派權限",
+     "url": "/admin/directory", "requires_auth": True,
+     "keywords": "directory ou tree ldap ad treeview 目錄 樹 組織單位 挑選 使用者"},
     {"icon": "eye", "name": "稽核記錄", "description": "登入 / 操作 / 設定變更追蹤",
      "url": "/admin/audit", "requires_auth": True,
      "keywords": "audit log activity history 稽核 記錄 記錄 操作 軌跡"},

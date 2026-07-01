@@ -4,6 +4,14 @@
 
 ---
 
+## [1.12.49] - 2026-07-01
+
+### 新增 — 目錄瀏覽（AD/LDAP OU 樹狀 → 指派權限給 OU）
+
+- 新增 admin 頁**「目錄瀏覽」**（僅 LDAP/AD 後端）：左側 **OU 樹狀逐層展開**（lazy load），點某 OU → 右側列出該 OU 直屬使用者（標註已登入過本系統者 + 篩選 全部/已登入/未登入）。
+- **把角色指派給 OU**（subject_type=ou）→ 該 OU 含子 OU 的所有使用者**登入時即生效**,不必等他們先登入。樹上有指派權限的 OU 標「● 有權限」。
+- 後端 `auth_ldap.list_ou_children/list_ou_users`（LEVEL scope + paged_search），端點 `/admin/directory/{tree,users,ou-roles}`;可用 `directory_root_base` / `directory_node_filter` / `directory_user_filter` cfg 微調。
+- 測試 `tests/test_directory_browser.py`。
 ## [1.12.48] - 2026-07-01
 
 ### 改善 — AD/LDAP 群組目錄成員 modal:標註已登入者 + 篩選 + 成員數一致
