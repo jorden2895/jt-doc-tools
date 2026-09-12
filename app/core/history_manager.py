@@ -14,6 +14,7 @@ import json
 import shutil
 import threading
 import time
+import re
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -30,7 +31,20 @@ class HistoryManager:
         self._root.mkdir(parents=True, exist_ok=True)
         self._output_filename = output_filename
 
+    #: 歷史紀錄的 id 是 `uuid4().hex[:12]` —— 12 個十六進位字元，沒有例外。
+    _HID_RE = re.compile(r"^[0-9a-f]{12}$")
+
     def _entry_dir(self, hid: str) -> Path:
+        """把 id 轉成目錄。**id 一律先驗格式**。
+
+        `hid` 是直接從網址路徑進來的（`/admin/history/{kind}/{hid}/file/{which}`），
+        而 Starlette 會把 `%2F` 解碼 —— 不驗的話 `../../..` 就能把路徑組到
+        歷史目錄外面去。檔名那一段本來就走白名單，所以能讀到的檔案有限，
+        而且這幾支端點都要 admin；但**這個專案有 `safe_paths` 就是為了不要
+        每次都重新判斷「這次危不危險」**。格式不對一律當成找不到。
+        """
+        if not self._HID_RE.match(hid or ""):
+            raise ValueError(f"不合法的歷史紀錄 id：{hid!r}")
         return self._root / hid
 
     def save(
@@ -95,6 +109,8 @@ class HistoryManager:
             return out
 
     def get(self, hid: str) -> Optional[dict]:
+        if not self._HID_RE.match(hid or ""):
+            return None          # 同 file()：不合法的 id 一律當成找不到
         mf = self._entry_dir(hid) / "meta.json"
         if not mf.exists():
             return None
@@ -114,10 +130,14 @@ class HistoryManager:
         name = mapping.get(kind)
         if not name:
             return None
+        if not self._HID_RE.match(hid or ""):
+            return None          # 讓端點自然回 404，不是 500
         p = self._entry_dir(hid) / name
         return p if p.exists() else None
 
     def delete(self, hid: str) -> bool:
+        if not self._HID_RE.match(hid or ""):
+            return False         # 同 file()：不合法的 id 一律當成找不到
         with self._lock:
             d = self._entry_dir(hid)
             if not d.exists():

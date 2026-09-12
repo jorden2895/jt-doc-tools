@@ -347,7 +347,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 <!-- BEGIN test-index (由 tools/build_test_plan_index.py 產生，不要手改) -->
 
-共 **250 支測試檔**。說明取自每支檔案自己的開頭說明，
+共 **251 支測試檔**。說明取自每支檔案自己的開頭說明，
 跑 `python tools/build_test_plan_index.py` 重建。
 
 > 這裡**刻意不列函式數** —— 那個數字每加一條測試就會變，
@@ -446,6 +446,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_generated_css_valid.py` | `generated-inline.css` 裡不可以出現 JavaScript 運算式 |
 | `test_glyph_text_recovery.py` | 從字形反查還原文字 —— 對付壞掉的 ToUnicode 對照表 |
 | `test_heic_support.py` | HEIC / HEIF（iPhone 照片）要真的解得開（GitHub issue #49） |
+| `test_history_id_validation.py` | 歷史紀錄的 id 直接從網址進來 —— 一律先驗格式再組路徑 |
 | `test_host_stats_container.py` | 系統狀態 CPU 在容器(LXC/Docker)內要顯示容器自己的用量，不抓宿主機 |
 | `test_i18n_catalog.py` | 語系檔與樣板的一致性守門 |
 | `test_i18n_dynamic_labels.py` | 程式端產生的顯示字串（`tr(變數)`）也必須有英文 |
@@ -1501,6 +1502,52 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 - [ ] `/admin/notify/save`
 - [ ] `/admin/notify/test/{channel}`
+
+## 4.9 管理區「唯讀但會吐出東西」的端點 🆕 v1.15.35
+
+> §4.8 收的是會改狀態的那些。**唯讀端點原本刻意不逐支列** —— 讀的風險是洩漏，
+> 已由 RBAC 與資安計畫守。但實算之後，19 支沒被點到名的唯讀管理端點裡有一類
+> 值得單獨寫：**它們會把檔案、或一段可執行的腳本交出去**，而路徑參數直接來自
+> 網址。
+>
+> v1.15.35 就是這樣抓到 `/admin/history/{kind}/{hid}/file/{which}` 的 `hid`
+> **完全沒驗格式**（`kind` 與 `which` 都走白名單，只有 id 沒有），而
+> `_entry_dir()` 是 `root / hid` —— Starlette 會把 `%2F` 解碼，所以
+> `../../..` 組得出歷史目錄外面的路徑。能讀到的檔案受白名單檔名限制、
+> 而且這幾支要**稽核員**身分（連 admin 都不行），所以沒有權限提升；
+> 但有 `safe_paths` 就是為了不要每次重新判斷「這次危不危險」。
+
+### 每一支都要過的三條（共用判準）
+
+- [ ] **路徑參數走格式白名單**（固定格式的 id 就照格式驗），不合法一律
+      **當成找不到回 404 —— 不可以丟例外變成 500**
+- [ ] **歸屬與角色**：誰看得到要與產品的權限契約一致
+      （歷史檔案是**稽核員專屬**，admin 讀不到，因為裡面是使用者的文件）
+- [ ] **產生出來的腳本 / 檔案不可以插入未驗證的值**（`install.sh` 這類是
+      要在客戶機器上執行的）
+
+### 逐組清單
+
+- [ ] `/admin/history/{kind}/{hid}/file/{which}` —— 使用者的原始檔與產出檔；
+      **稽核員專屬**。壞 id 要 404（`tests/test_history_id_validation.py`）
+- [ ] `/admin/assets/{asset_id}/file` / `/thumb` / `/watermark-preview` / `/edit`
+      —— 管理員看的資產；一般使用者走的是 `/assets/{id}/...`（v1.11.77）
+- [ ] `/admin/assets/export`（zip：`assets.json` ＋ 每張資產 PNG）、
+      `/admin/synonyms/export` 與 `/admin/profile/{cid}/export`（都是 JSON）
+      —— **這三支不是 CSV**，所以公式注入不是它們的風險（那條在
+      `/admin/audit/export.csv` 與 `/admin/translation-glossary/export`，
+      由 `tests/test_csv_injection.py` 守）。這三支要看的是**匯出內容裡不可以
+      夾帶密鑰**，以及中文檔名走 `content_disposition()`
+      （寫這一行時我原本照直覺寫成「CSV 公式注入」—— 去看了實際的
+      `media_type` 才發現是 zip / JSON。**計畫裡的斷言要查證過再寫**）
+- [ ] `/admin/ocr-langs/deploy/install.sh` / `uninstall.sh` —— 產生給遠端機器
+      執行的腳本，內容不可以夾帶未驗證的輸入
+- [ ] `/admin/users/{uid}/effective` / `/admin/groups/{gid}/members-ldap` /
+      `member-count` / `/admin/directory/users` / `selected` /
+      `/admin/groups/directory-sync/status` —— 目錄與權限查詢；
+      回傳不可含密碼屬性或二進位 SID（v1.12.46~52 已處理，這裡是釘住）
+- [ ] `/admin/system-status/host` / `users` / `/admin/vat-db/progress` ——
+      狀態查詢；容器內要回容器自己的數字（v1.11.73~76）
 
 ## 4.7 工具的非 API 端點 —— **畫面上實際打的那些** 🆕 v1.14.95
 
