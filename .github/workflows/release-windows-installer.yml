@@ -98,6 +98,14 @@ jobs:
           artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_SLUG }}
           github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
           wait-for-completion: true
+          # **等待時間一定要拉長**：SignPath 的 signing policy 開著「需要人工
+          # 核准」（OSS 憑證強制，關不掉），而 action 的預設等待只有 10 分鐘 ——
+          # v1.15.32 那次就是這樣紅的：`The operation has timed out after
+          # 00:10:33`，安裝程式明明**已經建好了**，只有簽章與掛上 Release 沒做到。
+          #
+          # 人工核准可能隔幾小時才發生（深夜打 tag 更是如此），所以給 3 小時。
+          # 公開 repo 的 Actions 分鐘數不計費，等待期間只是 idle。
+          wait-for-completion-timeout-in-seconds: 10800
           output-artifact-directory: packaging/windows/signed
 
       - name: Select release file (signed if present, else unsigned)

@@ -612,6 +612,41 @@ curl -X POST http://localhost:8765/tools/pdf-seam-stamp/api/pdf-seam-stamp \
 
 回應：蓋好騎縫章的 PDF。
 
+### 文件拉正
+
+把拍歪、掃歪的文件拉正，裁掉黑邊、去除不勻的底色。手機翻拍時會抓出紙張的
+四個角做透視校正。**完全不用 AI 也不用 GPU**（傳統影像處理，CPU 約 0.8 秒／頁
+@200 dpi）。
+
+```text
+POST /tools/doc-straighten/api/doc-straighten
+```
+
+| 參數 | 類型 | 必填 | 說明 |
+|---|---|---|---|
+| `file` | file | ✓ | PDF、圖片（含手機拍的 HEIC）或文書檔 |
+| `dpi` | int | | 處理解析度，150 / 200（預設）/ 300 |
+| `binarize` | bool | | 轉成黑白。**預設關閉** —— 實測會讓中文的細筆畫消失、文字辨識率明顯下降；它的用途是縮小檔案 |
+| `detect_quad` | bool | | 偵測紙張邊界做透視校正（預設開）。抓不到時自動退回只做拉正 |
+
+```bash
+curl -X POST http://localhost:8765/tools/doc-straighten/api/doc-straighten \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -F "file=@scan.pdf" -F "dpi=200" \
+  -o straightened.pdf -D -
+# 回應標頭：
+#   X-Straighten-Pages: 12
+#   X-Straighten-Worst-Residual: 0.10      ← 修正後殘留的歪斜角（越接近 0 越好）
+```
+
+**`X-Straighten-Worst-Residual` 是驗收指標**：轉錯方向時「角度」看起來有變化，
+只有殘留角會現形。正常應該在 0.2° 以內。
+
+網頁介面走背景作業：`POST /tools/doc-straighten/load` 上傳 →
+`POST /tools/doc-straighten/submit` 送出（回 `job_id`）→
+`GET /api/jobs/{job_id}` 輪詢 → `GET /api/jobs/{job_id}/download` 取結果。
+逐頁預覽是 `POST /tools/doc-straighten/preview`（回修正角度與殘留角）。
+
 ### PDF 頁面尺寸統一
 
 把混合尺寸的頁面統一成同一種紙張。內容維持向量（文字仍選得到），不是轉成圖片。

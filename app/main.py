@@ -21,7 +21,7 @@ from .core.job_manager import job_manager
 from .logging_setup import get_logger, setup_logging
 from .tool_registry import discover_tools, mount_tools
 
-VERSION = "1.15.32"
+VERSION = "1.15.33"
 
 setup_logging("DEBUG" if settings.debug else "INFO")
 logger = get_logger(__name__)
@@ -340,6 +340,7 @@ _TOOL_ALIASES = {
     "pdf-pages":          "pages reorder rearrange remove delete drop manage 頁面 排序 重排 整理 刪除",
     "pdf-pageno":         "page number numbering numbers footer header 頁碼 頁數 編號 注頁碼",
     "pdf-border":         "border frame outline slide 框線 加框 邊框 外框 頁框 投影片外框 線框 圓角 雙框 陰影 獎狀 證書",
+    "doc-straighten":     "deskew straighten skew rotate crop scan photo perspective dewarp 拉正 歪斜 傾斜 歪掉 翻拍 手機拍 掃描 掃歪 裁邊 黑邊 透視 校正 事務機",
     "office-to-pdf":      "convert convert-to-pdf office word excel powerpoint docx xlsx pptx odt ods odp 轉檔 轉成 文書 文件 辦公文件轉PDF 辦公文件轉 PDF 辦公文件 文書轉PDF 文書轉 PDF",
     "office-convert":     "convert format interconvert docx doc odt rtf txt xlsx xls ods csv pptx ppt odp 格式互轉 格式轉換 互轉 轉格式 轉檔 文書檔互轉 試算表互轉 簡報互轉 docx轉doc odt轉doc xlsx轉xls pptx轉odp 另存新檔 換格式 舊版格式 相容",
     "pdf-extract-images": "extract images pictures jpg png assets 擷取 提取 圖片 影像 抽圖",

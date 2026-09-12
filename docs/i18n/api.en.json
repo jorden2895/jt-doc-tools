@@ -517,5 +517,13 @@
  "標記已讀（<code>id</code> 或 <code>all=1</code>）": "Mark as read ( <code>id</code> or <code>all=1</code> )",
  "這四支": "These four",
  "刻意不列入 Bearer API": "are deliberately left out of the Bearer API",
- "：它們回傳的是「這個登入者的」資料， 拿 token 呼叫沒有意義（token 綁的是使用者，但這些端點的設計是給瀏覽器用的）。": ": they return data belonging to the signed-in user, so calling them with a token makes little sense (a token is bound to a user, but these endpoints are designed for the browser)."
+ "：它們回傳的是「這個登入者的」資料， 拿 token 呼叫沒有意義（token 綁的是使用者，但這些端點的設計是給瀏覽器用的）。": ": they return data belonging to the signed-in user, so calling them with a token makes little sense (a token is bound to a user, but these endpoints are designed for the browser).",
+ "文件拉正": "Document straightening",
+ "把拍歪、掃歪的文件拉正，裁掉黑邊、去除不勻的底色。手機翻拍時會抓出紙張的 四個角做透視校正。<strong>完全不用 AI 也不用 GPU</strong>（傳統影像處理，CPU 約 0.8 秒／頁 @200 dpi）。": "Straightens documents that were photographed or scanned at an angle, trims dark borders and evens out uneven background. For phone photos it finds the four corners of the sheet and corrects the perspective. <strong>No AI and no GPU involved</strong> (classical image processing; about 0.8 s per page on CPU at 200 dpi).",
+ "PDF、圖片（含手機拍的 HEIC）或文書檔": "PDF, an image (including HEIC from a phone) or an office document",
+ "處理解析度，150 / 200（預設）/ 300": "Processing resolution: 150 / 200 (default) / 300",
+ "轉成黑白。<strong>預設關閉</strong> —— 實測會讓中文的細筆畫消失、文字辨識率明顯下降；它的用途是縮小檔案": "Convert to black and white. <strong>Off by default</strong>: measurements show it erases thin Chinese strokes and clearly lowers OCR accuracy; its purpose is a smaller file, not clearer text",
+ "偵測紙張邊界做透視校正（預設開）。抓不到時自動退回只做拉正": "Detect the sheet edges and correct the perspective (on by default). Falls back to straightening only when the edges cannot be found",
+ "<strong><code>X-Straighten-Worst-Residual</code> 是驗收指標</strong>：轉錯方向時「角度」看起來有變化， 只有殘留角會現形。正常應該在 0.2° 以內。": "<strong><code>X-Straighten-Worst-Residual</code> is the acceptance figure</strong>: if the rotation went the wrong way the reported angle still looks like something happened; only the residual reveals it. It should stay within 0.2 degrees.",
+ "網頁介面走背景作業：<code>POST /tools/doc-straighten/load</code> 上傳 → <code>POST /tools/doc-straighten/submit</code> 送出（回 <code>job_id</code>）→ <code>GET /api/jobs/{job_id}</code> 輪詢 → <code>GET /api/jobs/{job_id}/download</code> 取結果。 逐頁預覽是 <code>POST /tools/doc-straighten/preview</code>（回修正角度與殘留角）。": "The web interface runs it as a background job: <code>POST /tools/doc-straighten/load</code> to upload, <code>POST /tools/doc-straighten/submit</code> to start (returns a <code>job_id</code>), poll <code>GET /api/jobs/{job_id}</code>, then fetch the result from <code>GET /api/jobs/{job_id}/download</code>. Per-page preview is <code>POST /tools/doc-straighten/preview</code>, which returns the correction angle and the residual."
 }

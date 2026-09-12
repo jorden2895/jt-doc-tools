@@ -732,6 +732,30 @@ _DEPS = [
         },
     },
     {
+        "key": "opencv-python-headless",
+        "label": "OpenCV (影像處理)",
+        "category": "文書處理",
+        "impact": "「文件拉正」的核心（去除不勻底色、裁出紙張、估歪斜角、"
+                  "透視校正）。headless 版沒有 GUI 相依，伺服器上裝得起來。"
+                  "缺了它，那支工具會在啟動時被安靜跳過（日誌只留一行錯誤，"
+                  "服務照常起來）—— 使用者只會發現工具不見了。"
+                  "OCR 引擎（EasyOCR）也會用到它。",
+        "impact_en": "The core of Document straightening (evening out the "
+                     "background, cropping the sheet, estimating skew, "
+                     "perspective correction). The headless build has no GUI "
+                     "dependencies. Without it that tool is skipped at "
+                     "start-up with only a log line, so it simply disappears "
+                     "from the tool list. The OCR engine uses it too.",
+        "soft": False,
+        "probe": lambda: _probe_python_pkg("cv2",
+                                           dist_name="opencv-python-headless"),
+        "install_cmd": {
+            "linux": "uv sync（或 sudo jtdt update；有預編 wheel，不需編譯）",
+            "macos": "uv sync",
+            "windows": "jtdt update（以系統管理員身分開啟 PowerShell）",
+        },
+    },
+    {
         "key": "defusedxml",
         "label": "defusedxml (XML 剖析防護)",
         "category": "文書處理",

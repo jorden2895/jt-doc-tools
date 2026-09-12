@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 _NON_ADMIN_TOOL_IDS = [
     "pdf-merge", "pdf-split", "pdf-rotate", "pdf-pages", "pdf-pageno",
     "pdf-border", "pdf-bookmark", "pdf-page-size", "pdf-nup", "pdf-compress",
+            "doc-straighten",
     "pdf-watermark",
     "pdf-extract-text", "pdf-extract-images", "pdf-attachments",
     "office-to-pdf", "office-convert", "pdf-to-image", "image-to-pdf", "scan-merge",
@@ -74,6 +75,7 @@ SEED_ROLES: list[dict] = [
             "pdf-extract-text", "pdf-extract-images", "pdf-attachments",
             "pdf-merge", "pdf-split", "pdf-pages", "pdf-rotate", "pdf-pageno",
             "pdf-border", "pdf-bookmark", "pdf-page-size", "pdf-nup", "pdf-compress",
+            "doc-straighten",
             "office-to-pdf", "office-convert", "pdf-to-image",
             "image-to-pdf", "scan-merge", "pdf-to-office", "pdf-to-slides",
         ],

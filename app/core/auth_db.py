@@ -741,6 +741,27 @@ def _m25_grant_doc_translate(conn: sqlite3.Connection) -> None:
     """)
 
 
+def _m26_grant_doc_straighten(conn: sqlite3.Connection) -> None:
+    """v26：把 `doc-straighten`（文件拉正，v1.15.33 新增）補給既有角色。
+
+    理由同 `_m18`~`_m25`（seed 快照的 bootstrap 缺口）：從舊版升上來的安裝，
+    角色早就存在，而 `seed_builtin_roles()` 的差集 top-up 以快照為基準 ——
+    新工具不會自己長出來，那些安裝的一般使用者永遠看不到這支。
+
+    拿 `pdf-rotate`（頁面轉向）當訊號：同一類的事（把頁面擺正），拉正只是
+    自動算出角度而不是使用者自己選 90/180/270。能轉向的人用這支沒有額外風險。
+    **不可以無條件補給所有角色**，那會把刻意收窄過的角色一起放寬。
+    """
+    conn.executescript("""
+    INSERT OR IGNORE INTO role_perms(role_id, tool_id)
+        SELECT role_id, 'doc-straighten' FROM role_perms
+        WHERE tool_id = 'pdf-rotate';
+    INSERT OR IGNORE INTO subject_perms(subject_type, subject_key, tool_id)
+        SELECT subject_type, subject_key, 'doc-straighten'
+        FROM subject_perms WHERE tool_id = 'pdf-rotate';
+    """)
+
+
 MIGRATIONS = [_m1_initial, _m2_username_source_unique,
               _m3_rename_pdf_diff_to_doc_diff,
               _m4_grant_image_to_pdf,
@@ -762,7 +783,8 @@ MIGRATIONS = [_m1_initial, _m2_username_source_unique,
               _m22_grant_office_convert,
               _m23_canon_ou_subject_keys,
               _m24_index_group_members_user,
-              _m25_grant_doc_translate]
+              _m25_grant_doc_translate,
+              _m26_grant_doc_straighten]
 
 
 def auth_db_path() -> Path:

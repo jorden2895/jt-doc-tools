@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tr('文件拉正') }} · {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>{{ icon('crop') }} {{ tr('文件拉正') }}</h1>
+<p class="muted">{{ tr('把拍歪、掃歪的文件拉正，裁掉黑邊、去除不勻的底色，輸出端正的 PDF。收 PDF、手機拍的照片與文書檔。') }}</p>
+{# 原生 PDF 丟進來會被整頁轉成圖片 → 文字選不到、搜尋不到，而畫面上看起來
+   一模一樣。所以核心會把「已經是正的、而且有文字層」的頁面原樣保留，
+   **並且要在這裡先講出來**，不然使用者會以為工具沒作用。 #}
+<div class="notice">{{ icon('info') }} {{ tr('已經是正的、而且有文字層的頁面會原樣保留 —— 那種頁面處理它只會把文字變成圖片（選不到、搜尋不到）。真正歪掉或掃描來的頁面才會重新算圖。') }}</div>
+
+<div class="panel">
+  <h2>{{ tr('1. 上傳檔案') }}</h2>
+  {# 上傳區要用共用元件（`FileUpload` 靠裡面的 `.drop-zone` /
+     `input[type=file]` 接線）—— 只放一個空的 `<div>` 的話**畫面上是一片空白、
+     而且沒有任何錯誤訊息**（我第一版就是這樣，截圖才看出來）。 #}
+  {% with upload_id='dsUpload',
+          accept='application/pdf,.pdf,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp,.heic,.heif,.doc,.docx,.odt,.xls,.xlsx,.ods,.ppt,.pptx,.odp',
+          hint=tr('單檔。手機拍的照片（含 HEIC）與文書檔都可以，文書檔會先自動轉成 PDF。') %}
+    {% include "components/file_upload.html" %}
+  {% endwith %}
+  <div id="dsInfo" class="muted" hidden></div>
+</div>
+
+<div class="panel" id="dsOptPanel" hidden>
+  <h2>{{ tr('2. 選項') }}</h2>
+  <div class="af-field">
+    <label for="dsDpi">{{ tr('處理解析度') }}</label>
+    <select id="dsDpi" class="jt-select">
+      {% for d in dpi_choices %}
+      <option value="{{ d }}" {% if d == 200 %}selected{% endif %}>{{ d }} dpi</option>
+      {% endfor %}
+    </select>
+    <small class="af-note">{{ tr('200 dpi 是清晰度與速度的平衡（約 0.8 秒／頁）；300 dpi 細節好一點但慢一倍、檔案也大。') }}</small>
+  </div>
+  <div class="af-field">
+    <label for="dsQuad">{{ tr('偵測紙張邊界') }}</label>
+    <input type="checkbox" id="dsQuad" checked />
+    <small class="af-note">{{ tr('手機翻拍時把紙張的四個角抓出來做透視校正。純掃描件通常不需要，抓不到時會自動只做拉正。') }}</small>
+  </div>
+  <div class="af-field">
+    <label for="dsBin">{{ tr('轉成黑白（縮小檔案）') }}</label>
+    <input type="checkbox" id="dsBin" />
+    <small class="af-note"><strong>{{ tr('預設不要開。') }}</strong>{{ tr('實測轉成黑白會把中文的細筆畫吃掉，文字辨識率反而明顯下降（0.775 → 0.108）。它的用途是縮小檔案，不是讓文字更清楚。') }}</small>
+  </div>
+  <button class="btn" id="dsPreview" type="button">{{ icon('eye') }} {{ tr('預覽這一頁的修正結果') }}</button>
+  <button class="btn btn-primary" id="dsGo" type="button">{{ icon('play') }} {{ tr('開始拉正') }}</button>
+</div>
+
+<div class="panel" id="dsPvPanel" hidden>
+  <h2>{{ tr('3. 修正前後') }}</h2>
+  <div class="af-field">
+    <label for="dsPvPage">{{ tr('頁碼') }}</label>
+    <input type="number" id="dsPvPage" value="1" min="1" />
+    <small class="af-note" id="dsPvStat"></small>
+  </div>
+  <div class="ds-compare">
+    <figure><figcaption>{{ tr('修正前') }}</figcaption><img id="dsPvBefore" alt="{{ tr('修正前') }}" /></figure>
+    <figure><figcaption>{{ tr('修正後') }}</figcaption><img id="dsPvAfter" alt="{{ tr('修正後') }}" /></figure>
+  </div>
+</div>
+
+<div id="dsJob"></div>
+
+<div class="panel" id="dsResult" hidden>
+  <h2>{{ tr('完成') }}</h2>
+  <div id="dsDoneMsg" class="muted"></div>
+  <a class="btn btn-primary" id="dsDownload" href="#">{{ icon('download') }} {{ tr('下載拉正後的 PDF') }}</a>
+  {% if workspace_enabled(request) %}<button class="btn" id="dsSaveWs" type="button">{{ icon('archive') }} {{ tr('存至工作區') }}</button>{% endif %}
+</div>
+{% endblock %}
+
+{% block head %}
+<style nonce="{{ request.state.csp_nonce }}">
+  /* 修正前後並排。窄畫面改成上下 —— 兩張 A4 並排在手機上會小到看不出差別。 */
+  .ds-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .ds-compare figure { margin: 0; }
+  .ds-compare figcaption { font-size: .85rem; color: var(--muted, #64748b); margin-bottom: 6px; }
+  .ds-compare img { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; }
+  @media (max-width: 860px) { .ds-compare { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script nonce="{{ request.state.csp_nonce }}">
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let uploadId = null, pageCount = 0, srcName = '';
+  let pvToken = 0;   // 每次重畫預覽換一個 token，過期的回應直接丟掉
+
+  const fu = new FileUpload($('dsUpload'), async (f) => {
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await fu.upload('/tools/doc-straighten/load', fd,
+                              { processingLabel: tr('讀取中…（文書檔會先轉成 PDF）') });
+    if (!r.ok) {
+      (window.showAlert || alert)(await window.friendlyServerError(r, tr('讀取失敗')));
+      return;
+    }
+    const d = await r.json();
+    uploadId = d.upload_id; pageCount = d.pages; srcName = d.name || 'document';
+    $('dsInfo').textContent = tr('共 {0} 頁').replace('{0}', pageCount);
+    $('dsInfo').hidden = false;
+    $('dsOptPanel').hidden = false;
+    $('dsPvPage').max = pageCount;
+    drawPreview();
+  });
+
+  async function drawPreview() {
+    if (!uploadId) return;
+    const page = Math.min(pageCount, Math.max(1, parseInt($('dsPvPage').value || '1', 10)));
+    const token = ++pvToken;
+    $('dsPvPanel').hidden = false;
+    $('dsPvStat').textContent = tr('產生預覽中…');
+    $('dsPvBefore').src = `/tools/doc-straighten/thumb/${uploadId}/${page}`;
+    const fd = new FormData();
+    fd.append('upload_id', uploadId);
+    fd.append('page', page);
+    fd.append('dpi', $('dsDpi').value);
+    fd.append('binarize', $('dsBin').checked ? '1' : '');
+    fd.append('detect_quad', $('dsQuad').checked ? '1' : '');
+    try {
+      const r = await fetch('/tools/doc-straighten/preview', { method: 'POST', body: fd });
+      if (token !== pvToken) return;          // 已經有更新的請求了
+      if (!r.ok) {
+        $('dsPvStat').textContent = await window.friendlyServerError(r, tr('預覽失敗'));
+        return;
+      }
+      const d = await r.json();
+      $('dsPvAfter').src = d.url + '?t=' + Date.now();
+      // **殘留角是驗收指標**：轉錯方向時角度看起來「有動」，只有殘留角會現形
+      $('dsPvStat').textContent =
+        tr('轉了 {0}°，修正後殘留 {1}°（越接近 0 越好）')
+          .replace('{0}', d.angle).replace('{1}', d.residual)
+        + (d.quad_found ? '　' + tr('（抓到紙張邊界，已做透視校正）') : '');
+    } catch (e) {
+      if (token === pvToken) $('dsPvStat').textContent = tr('預覽失敗');
+    }
+  }
+
+  $('dsPreview').addEventListener('click', drawPreview);
+  $('dsPvPage').addEventListener('change', drawPreview);
+  ['dsDpi', 'dsBin', 'dsQuad'].forEach((id) =>
+    $(id).addEventListener('change', drawPreview));
+
+  const jp = new JobProgress($('dsJob'), {
+    onDone: (job) => {
+      $('dsDownload').href = `/api/jobs/${jp.jobId}/download`;
+      $('dsDoneMsg').textContent = (job && job.message) || tr('完成');
+      $('dsResult').hidden = false;
+      const ws = $('dsSaveWs');
+      if (ws && window.attachWorkspaceSave) {
+        const jid = jp.jobId;
+        const outName = (srcName || 'document') + '_straightened.pdf';
+        window.attachWorkspaceSave(ws, () => ({
+          jobId: jid, name: outName, tool: 'doc-straighten' }));
+      }
+    },
+  });
+
+  $('dsGo').addEventListener('click', async () => {
+    if (!uploadId) return;
+    const btn = $('dsGo');
+    btn.disabled = true;
+    $('dsResult').hidden = true;
+    const fd = new FormData();
+    fd.append('upload_id', uploadId);
+    fd.append('dpi', $('dsDpi').value);
+    fd.append('binarize', $('dsBin').checked ? '1' : '');
+    fd.append('detect_quad', $('dsQuad').checked ? '1' : '');
+    fd.append('out_name', srcName);
+    try {
+      const r = await fetch('/tools/doc-straighten/submit', { method: 'POST', body: fd });
+      if (!r.ok) {
+        (window.showAlert || alert)(await window.friendlyServerError(r, tr('送出失敗')));
+        return;
+      }
+      const d = await r.json();
+      jp.track(d.job_id);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // 從「我的作業」按開啟時把作業接回來 —— 不接的話會落到一片空白頁
+  const qs = new URLSearchParams(location.search);
+  if (qs.get('job')) jp.track(qs.get('job'));
+})();
+</script>
+{% endblock %}

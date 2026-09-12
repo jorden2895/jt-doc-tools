@@ -16,7 +16,13 @@ from pathlib import Path
 
 import pytest
 
-OPS = Path("github/OPS.md")
+# **不可以寫死 `github/`**：開發樹的公開檔在 `github/` 底下，標準 clone 下來
+# 就在根目錄 —— 寫死的話在 clone 上永遠 FileNotFoundError，而開發機上一直
+# 是綠的。這條 CLAUDE.md 記過好幾次，這支測試（v1.15.24 寫的）還是踩了，
+# 而且是 **CI 在 main 上跑才現形**（2026-09-13）。
+from tools.repo_paths import public_root  # noqa: E402
+
+OPS = public_root(Path(__file__).resolve().parents[1]) / "OPS.md"
 
 
 @pytest.fixture(scope="module")

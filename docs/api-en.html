@@ -118,6 +118,7 @@
             <a class="nav-ep" href="#pdf-頁面加框">PDF page borders</a>
             <a class="nav-ep" href="#pdf-書籤與目錄">PDF bookmarks and contents</a>
             <a class="nav-ep" href="#pdf-騎縫章">PDF seam stamp</a>
+            <a class="nav-ep" href="#文件拉正">Document straightening</a>
             <a class="nav-ep" href="#pdf-頁面尺寸統一">Unify PDF page size</a>
             <a class="nav-ep" href="#pdf-多頁合一n-up">PDF N-up</a>
             <a class="nav-ep" href="#pdf-壓縮">Compress PDF</a>
@@ -564,6 +565,22 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
   <span class="hl-flag">-F</span> <span class="hl-str">&quot;mode=side&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;size_mm=45&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;jitter_angle=true&quot;</span> \
   <span class="hl-flag">--output</span> contract_seam.pdf</code></pre>
 <p>Response: the PDF with the seam stamp.</p>
+      </section>
+      <section class="doc-section" data-sec="文件拉正" data-title="Document straightening" hidden>
+<div class="doc-crumb">4. PDF editing API</div>
+<h4 id="文件拉正">Document straightening</h4>
+<p>Straightens documents that were photographed or scanned at an angle, trims dark borders and evens out uneven background. For phone photos it finds the four corners of the sheet and corrects the perspective. <strong>No AI and no GPU involved</strong> (classical image processing; about 0.8 s per page on CPU at 200 dpi).</p>
+<pre><code class="lang-text"><span class="hl-method">POST</span> /tools/doc-straighten/api/doc-straighten</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>file</code></td><td>file</td><td>✓</td><td>PDF, an image (including HEIC from a phone) or an office document</td></tr><tr><td><code>dpi</code></td><td>int</td><td></td><td>Processing resolution: 150 / 200 (default) / 300</td></tr><tr><td><code>binarize</code></td><td>bool</td><td></td><td>Convert to black and white. <strong>Off by default</strong>: measurements show it erases thin Chinese strokes and clearly lowers OCR accuracy; its purpose is a smaller file, not clearer text</td></tr><tr><td><code>detect_quad</code></td><td>bool</td><td></td><td>Detect the sheet edges and correct the perspective (on by default). Falls back to straightening only when the edges cannot be found</td></tr></tbody></table></div>
+<pre><code class="lang-bash">curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/tools/doc-straighten/api/doc-straighten</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer YOUR_TOKEN&quot;</span> \
+  <span class="hl-flag">-F</span> <span class="hl-str">&quot;file=@scan.pdf&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;dpi=200&quot;</span> \
+  <span class="hl-flag">-o</span> straightened.pdf <span class="hl-flag">-D</span> -
+<span class="hl-cmt"># 回應標頭：</span>
+<span class="hl-cmt">#   X-Straighten-Pages: 12</span>
+<span class="hl-cmt">#   X-Straighten-Worst-Residual: 0.10      ← 修正後殘留的歪斜角（越接近 0 越好）</span></code></pre>
+<p><strong><code>X-Straighten-Worst-Residual</code> is the acceptance figure</strong>: if the rotation went the wrong way the reported angle still looks like something happened; only the residual reveals it. It should stay within 0.2 degrees.</p>
+<p>The web interface runs it as a background job: <code>POST /tools/doc-straighten/load</code> to upload, <code>POST /tools/doc-straighten/submit</code> to start (returns a <code>job_id</code>), poll <code>GET /api/jobs/{job_id}</code>, then fetch the result from <code>GET /api/jobs/{job_id}/download</code>. Per-page preview is <code>POST /tools/doc-straighten/preview</code>, which returns the correction angle and the residual.</p>
       </section>
       <section class="doc-section" data-sec="pdf-頁面尺寸統一" data-title="Unify PDF page size" hidden>
 <div class="doc-crumb">4. PDF editing API</div>

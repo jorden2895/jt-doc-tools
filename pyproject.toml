@@ -1,6 +1,6 @@
 [project]
 name = "jt-doc-tools"
-version = "1.15.32"
+version = "1.15.33"
 description = "Jason Tools 文件工具箱 — 整合式 PDF / Office 文件處理平台"
 authors = [{ name = "Jason Cheng (Jason Tools)", email = "jason@jason.tools" }]
 requires-python = ">=3.10"
@@ -106,6 +106,15 @@ dependencies = [
     "defusedxml>=0.7,<1",
     # rapidfuzz — pdf-to-office 的 docx↔PDFTruth alignment 模糊比對引擎（比 difflib 快 10x+）。
     "rapidfuzz>=3.0,<4",
+    # opencv-python-headless — 「文件拉正」的核心（去不勻底色、裁紙張、
+    # 估歪斜角、透視校正）。**headless 版沒有 GUI 相依**（不需要 X11 / Qt），
+    # 伺服器上裝得起來。Apache-2.0，與 AGPL 相容。
+    #
+    # **為什麼要顯式宣告**：`cv2` 目前是 easyocr 的傳遞相依，而 easyocr 是
+    # 選配的重型套件 —— 沒裝 OCR 的機器上這支工具會在啟動時被安靜跳過
+    # （工具註冊表記一行 ERROR，服務照常起、healthz 照樣 200，使用者只發現
+    # 「工具不見了」）。`defusedxml` 那次一模一樣。
+    "opencv-python-headless>=4.10,<5",
     # numpy — 直接 import：pdf-to-office table_borders_from_image fixer（頂層）+
     # ocr_engine 影像前處理。原本靠 easyocr/opencv 的 transitive 帶入，但程式直接
     # 使用，須顯式宣告（避免日後 transitive 變動破壞）。

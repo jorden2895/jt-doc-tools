@@ -118,6 +118,7 @@
             <a class="nav-ep" href="#pdf-頁面加框">PDF 頁面加框</a>
             <a class="nav-ep" href="#pdf-書籤與目錄">PDF 書籤與目錄</a>
             <a class="nav-ep" href="#pdf-騎縫章">PDF 騎縫章</a>
+            <a class="nav-ep" href="#文件拉正">文件拉正</a>
             <a class="nav-ep" href="#pdf-頁面尺寸統一">PDF 頁面尺寸統一</a>
             <a class="nav-ep" href="#pdf-多頁合一n-up">PDF 多頁合一（N-up）</a>
             <a class="nav-ep" href="#pdf-壓縮">PDF 壓縮</a>
@@ -564,6 +565,22 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
   <span class="hl-flag">-F</span> <span class="hl-str">&quot;mode=side&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;size_mm=45&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;jitter_angle=true&quot;</span> \
   <span class="hl-flag">--output</span> contract_seam.pdf</code></pre>
 <p>回應：蓋好騎縫章的 PDF。</p>
+      </section>
+      <section class="doc-section" data-sec="文件拉正" data-title="文件拉正" hidden>
+<div class="doc-crumb">4. PDF 編修 API</div>
+<h4 id="文件拉正">文件拉正</h4>
+<p>把拍歪、掃歪的文件拉正，裁掉黑邊、去除不勻的底色。手機翻拍時會抓出紙張的 四個角做透視校正。<strong>完全不用 AI 也不用 GPU</strong>（傳統影像處理，CPU 約 0.8 秒／頁 @200 dpi）。</p>
+<pre><code class="lang-text"><span class="hl-method">POST</span> /tools/doc-straighten/api/doc-straighten</code></pre>
+<div class="table-wrap"><table><thead><tr><th>參數</th><th>類型</th><th>必填</th><th>說明</th></tr></thead><tbody><tr><td><code>file</code></td><td>file</td><td>✓</td><td>PDF、圖片（含手機拍的 HEIC）或文書檔</td></tr><tr><td><code>dpi</code></td><td>int</td><td></td><td>處理解析度，150 / 200（預設）/ 300</td></tr><tr><td><code>binarize</code></td><td>bool</td><td></td><td>轉成黑白。<strong>預設關閉</strong> —— 實測會讓中文的細筆畫消失、文字辨識率明顯下降；它的用途是縮小檔案</td></tr><tr><td><code>detect_quad</code></td><td>bool</td><td></td><td>偵測紙張邊界做透視校正（預設開）。抓不到時自動退回只做拉正</td></tr></tbody></table></div>
+<pre><code class="lang-bash">curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/tools/doc-straighten/api/doc-straighten</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer YOUR_TOKEN&quot;</span> \
+  <span class="hl-flag">-F</span> <span class="hl-str">&quot;file=@scan.pdf&quot;</span> <span class="hl-flag">-F</span> <span class="hl-str">&quot;dpi=200&quot;</span> \
+  <span class="hl-flag">-o</span> straightened.pdf <span class="hl-flag">-D</span> -
+<span class="hl-cmt"># 回應標頭：</span>
+<span class="hl-cmt">#   X-Straighten-Pages: 12</span>
+<span class="hl-cmt">#   X-Straighten-Worst-Residual: 0.10      ← 修正後殘留的歪斜角（越接近 0 越好）</span></code></pre>
+<p><strong><code>X-Straighten-Worst-Residual</code> 是驗收指標</strong>：轉錯方向時「角度」看起來有變化， 只有殘留角會現形。正常應該在 0.2° 以內。</p>
+<p>網頁介面走背景作業：<code>POST /tools/doc-straighten/load</code> 上傳 → <code>POST /tools/doc-straighten/submit</code> 送出（回 <code>job_id</code>）→ <code>GET /api/jobs/{job_id}</code> 輪詢 → <code>GET /api/jobs/{job_id}/download</code> 取結果。 逐頁預覽是 <code>POST /tools/doc-straighten/preview</code>（回修正角度與殘留角）。</p>
       </section>
       <section class="doc-section" data-sec="pdf-頁面尺寸統一" data-title="PDF 頁面尺寸統一" hidden>
 <div class="doc-crumb">4. PDF 編修 API</div>

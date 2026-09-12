@@ -57,7 +57,7 @@ _CACHE: Optional[dict] = None
 #: 會起 soffice 的工具。**新增用到 office_convert 的工具要加進來** ——
 #: `tests/test_job_concurrency.py` 會跟實際掃描結果比對，漏加會紅。
 OFFICE_TOOL_IDS: frozenset[str] = frozenset({
-    "doc-deident", "doc-diff", "doc-translate", "markdown-to-doc", "office-to-pdf",
+    "doc-deident", "doc-diff", "doc-translate", "markdown-to-doc", "office-to-pdf", "doc-straighten",
     "office-convert",
     "pdf-bookmark", "pdf-border",
     "pdf-extract-text", "pdf-fill", "pdf-nup", "pdf-to-image",

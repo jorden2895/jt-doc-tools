@@ -330,7 +330,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
       （功能完全正確，只是資料量大時慢）。
 - [ ] 升級**不可以卡住啟動**：大表加索引要能在合理時間內做完，或放到背景。
 
-- **`app/core/auth_db.py`**：`_m1_initial`、`_m2_username_source_unique`、`_m3_rename_pdf_diff_to_doc_diff`、`_m4_grant_image_to_pdf`、`_m5_grant_translate_doc`、`_m6_totp_columns`、`_m7_audit_seed_column`、`_m8_sso_sources`、`_m9_role_seed_snapshot`、`_m10_role_default_for_new`、`_m11_group_sync_cache`、`_m12_unprovision_mirrored_users`、`_m13_grant_pdf_to_slides`、`_m14_user_email`、`_m15_directory_presence`、`_m16_session_last_seen`、`_m17_directory_account_state`、`_m18_grant_transit_proof_and_border`、`_m19_grant_pdf_bookmark`、`_m20_grant_seam_stamp`、`_m21_grant_page_size`、`_m22_grant_office_convert`、`_m23_canon_ou_subject_keys`、`_m24_index_group_members_user`、`_m25_grant_doc_translate`
+- **`app/core/auth_db.py`**：`_m1_initial`、`_m2_username_source_unique`、`_m3_rename_pdf_diff_to_doc_diff`、`_m4_grant_image_to_pdf`、`_m5_grant_translate_doc`、`_m6_totp_columns`、`_m7_audit_seed_column`、`_m8_sso_sources`、`_m9_role_seed_snapshot`、`_m10_role_default_for_new`、`_m11_group_sync_cache`、`_m12_unprovision_mirrored_users`、`_m13_grant_pdf_to_slides`、`_m14_user_email`、`_m15_directory_presence`、`_m16_session_last_seen`、`_m17_directory_account_state`、`_m18_grant_transit_proof_and_border`、`_m19_grant_pdf_bookmark`、`_m20_grant_seam_stamp`、`_m21_grant_page_size`、`_m22_grant_office_convert`、`_m23_canon_ou_subject_keys`、`_m24_index_group_members_user`、`_m25_grant_doc_translate`、`_m26_grant_doc_straighten`
 - **`app/core/audit_db.py`**：`_m1_initial`
 - **`app/core/job_store.py`**：`_m1_initial`、`_m2_metrics`、`_m3_started_at`
 
@@ -347,7 +347,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 <!-- BEGIN test-index (由 tools/build_test_plan_index.py 產生，不要手改) -->
 
-共 **245 支測試檔**。說明取自每支檔案自己的開頭說明，
+共 **247 支測試檔**。說明取自每支檔案自己的開頭說明，
 跑 `python tools/build_test_plan_index.py` 重建。
 
 > 這裡**刻意不列函式數** —— 那個數字每加一條測試就會變，
@@ -426,6 +426,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_doc_deident_image_residue.py` | 去識別化必須把**圖片裡的**個資也刪掉（外部稽核 F01，v1.15.28） |
 | `test_doc_deident_table_labels.py` | 標籤與值分屬兩個表格儲存格時也要偵測得到（GitHub issue #43） |
 | `test_doc_diff.py` | Tests for the renamed 文件差異比對 tool (formerly pdf-diff). |
+| `test_doc_straighten.py` | 文件拉正（v1.15.33，第一期：只有自動模式） |
 | `test_doc_translate.py` | 文件翻譯：產出**同格式、同版面**的檔案 |
 | `test_doc_translate_spreadsheet_view.py` | 試算表翻譯的兩件事：預覽要看得到東西、產出要開在內容的開頭 |
 | `test_docs_english_pages.py` | 介紹站與 API 手冊的英文版（GitHub Pages） |
@@ -532,6 +533,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_preview_page_range.py` | 縮圖 / 預覽的頁碼超出範圍要回 4xx，**不可以 500** |
 | `test_proxy_scheme_mismatch.py` | 代理宣稱的協定 ≠ 瀏覽器實際的協定（客戶回報，v1.15.26） |
 | `test_proxy_sso.py` | Reverse-proxy (Kerberos/SPNEGO) SSO — app/core/proxy_sso.py + middleware. |
+| `test_public_tree_paths.py` | 測試不可以寫死 `github/` 這一層（2026-09-13，CI 在 main 上紅了才抓到） |
 | `test_real_samples_smoke.py` | 拿**真實的**樣本檔掃過所有吃單一 PDF 的工具 |
 | `test_redos_ad_dn.py` | ReDoS regression for RE_AD_DN — closes CodeQL alert #13 |
 | `test_restrict_stamp_render.py` | 個資限用章的渲染 —— 橫式 / 直式 / 對角線 |
@@ -858,6 +860,20 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 - [ ] 辦公文件來源先轉 PDF 再加框
 - [ ] 邊框不會蓋到原本的內容
 
+#### 文件拉正 (doc-straighten) 🆕 v1.15.33
+- [ ] 歪斜的掃描件 → **修正後殘留角接近 0**（實測 0.10°）。
+      **這是主要判準**：轉錯方向時「角度」看起來有變化，只有殘留角會現形
+- [ ] 手機翻拍（透視變形）→ 抓到四個角、拉正後四邊平行
+- [ ] **抓不到紙張邊界時要自動退回只做拉正**，不可以失敗或產出歪的結果
+- [ ] 逐頁進度看得到（`拉正中… 3/12`）；中途可取消
+- [ ] 產出頁數與原檔相同、頁面尺寸不變（不可以變成巨大的頁面）
+- [ ] **「轉成黑白」預設關閉**，而且介面寫明它是為了縮小檔案、
+      不是提高辨識率（實測開了之後 OCR 相似度 0.775 → 0.108）
+- [ ] 灰階輸出用 JPEG、黑白輸出用 PNG（實測 2.5 MB → 885 KB / 176 KB）
+- [ ] 圖片輸入（含手機的 HEIC）與文書檔輸入都走得通
+- [ ] 作業清單上標著「需 Office 引擎」（收文書檔會起 soffice）
+- [ ] 從「我的作業」按開啟回到頁面（`?job=`）看得到結果與下載鈕
+
 #### 乘車證明整理 (transit-proof) 🆕 v1.14.17
 - [ ] 上傳台鐵 / 高鐵乘車證明 PDF → 日期、交通工具、起訖、費用成表
 - [ ] 多份批次 → 單一彙整表；CSV 匯出欄位齊全（公式注入已由
@@ -1122,7 +1138,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 - [ ] Windows **沒有 `sudo`**：文件裡的指令要分平台寫
       （Linux/macOS `sudo jtdt update`；Windows 先開系統管理員 PowerShell）。
 
-## 4. API 覆蓋檢查 🆕（v1.8.55 起完整列出，現 47 個工具）
+## 4. API 覆蓋檢查 🆕（v1.8.55 起完整列出，現 48 個工具）
 
 每個工具至少 1 個 `/api/<tool-id>` endpoint（路徑：`/tools/<tool-id>/api/<tool-id>` 或 `/tools/<tool-id>/convert`）。發版前 curl 抽測：
 
@@ -1141,6 +1157,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 - [ ] `/tools/pdf-encrypt/api/pdf-encrypt` — POST file + password → PDF
 - [ ] `/tools/pdf-decrypt/api/pdf-decrypt` — POST file + password → PDF
 - [ ] `/tools/pdf-border/api/pdf-border` — POST file + 框線設定 → PDF
+- [ ] `/tools/doc-straighten/api/doc-straighten` — POST file + dpi / binarize / detect_quad → 拉正後的 PDF；回應標頭帶 `X-Straighten-Pages` 與 **`X-Straighten-Worst-Residual`**（殘留歪斜，驗收指標）
 - [ ] `/tools/pdf-bookmark/api/pdf-bookmark` — POST files[] + 書籤設定 → PDF（書籤 / 目錄頁）
 - [ ] `/tools/pdf-seam-stamp/api/pdf-seam-stamp` — POST file + 章來源 → PDF（切片蓋在連續頁）
 - [ ] `/tools/pdf-page-size/api/pdf-page-size` — POST file + paper → PDF（統一尺寸）
@@ -1484,6 +1501,15 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 ## 4.7 工具的非 API 端點 —— **畫面上實際打的那些** 🆕 v1.14.95
 
+- [ ] `/tools/doc-straighten/load` —— 上傳（PDF / 圖片 / 文書檔）；
+      回頁數與檔名。**壞檔要回 400 不可以 500**
+- [ ] `/tools/doc-straighten/thumb/{upload_id}/{page}` —— 原稿縮圖；
+      **別人的 upload_id 要 404**（歸屬檢查）
+- [ ] `/tools/doc-straighten/preview` —— 單頁修正預覽，回**修正角度與殘留角**；
+      頁碼超範圍要 404（不是 500）
+- [ ] `/tools/doc-straighten/preview-img/{upload_id}/{page}` —— 取預覽圖；
+      **不可以被快取**（換了選項要看到新的）
+- [ ] `/tools/doc-straighten/submit` —— 送出背景作業，回 `job_id`
 §4 只保證「每個工具至少一支 `/api/`」有驗收，§4.6 補了管理 / 作業 / 通知 API。
 **但使用者在畫面上按的每一顆按鈕，打的其實是這一層**（`analyze` / `preview` /
 `thumb` / `download` / `export-*` / 暫存區 CRUD）—— 而它們一條驗收都沒有。
