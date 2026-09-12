@@ -23,7 +23,7 @@ r"""照 `github/API.md` 的每一條 curl 範例實際呼叫一遍。
 **判準是看 detail 說的是「你的檔案裡沒有那個東西」還是「你送的參數我不認得」**
 —— 後者才是要修的。
 
-跑完 `temp/api-audit/results.json` 會有每一條的完整結果。
+跑完 `temp/api-audit/results.json` 會有每一條的完整結果（相對於**專案根**，在公開樹上就是 clone 的根目錄；兩層 `.gitignore` 都擋著 `temp/`，不會被提交）。
 
 需要 soffice；沒有 AVX2 的機器跑到 pdf-ocr 那條會 core dump（那是 CPU 不是
 這支程式，見 CLAUDE.md v1.15.4），結果檔在那之前就已經寫好了。
