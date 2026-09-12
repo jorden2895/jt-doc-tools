@@ -22,6 +22,8 @@ import json
 import threading
 from typing import Any
 
+from . import atomic_json
+
 _LOCK = threading.Lock()
 _DEFAULTS: dict[str, Any] = {"max_upload_mb": 500}
 
@@ -78,10 +80,7 @@ def save(new: dict[str, Any]) -> dict[str, Any]:
         except (TypeError, ValueError):
             raise ValueError("上傳上限必須是 0 以上的整數（0 = 不限）")
     with _LOCK:
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(cur, ensure_ascii=False, indent=2),
-                     encoding="utf-8")
+        atomic_json.write_json(_path(), cur)
     return cur
 
 

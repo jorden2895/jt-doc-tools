@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from ..config import settings
-from . import image_utils
+from . import atomic_json, image_utils
 
 AssetType = Literal["stamp", "watermark", "signature", "logo"]
 
@@ -103,7 +103,7 @@ class AssetManager:
         return json.loads(self._meta_path.read_text(encoding="utf-8"))
 
     def _write(self, data: dict) -> None:
-        self._meta_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_json.write_json(self._meta_path, data)
 
     # ---- CRUD ----
     def list(self, type: Optional[AssetType] = None) -> list[Asset]:

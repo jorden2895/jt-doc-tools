@@ -18,6 +18,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from ...config import settings
+from ...core import atomic_json
 from ...core.http_utils import content_disposition
 
 _UPLOAD_ID_RE = re.compile(r"^[a-f0-9]{32}$")
@@ -375,7 +376,7 @@ async def analyze(
             payload["llm"] = {"error": "LLM 加值處理失敗（詳見伺服器日誌）"}
     # Save sidecar; PDF stays for /preview thumbnails.
     _, sidecar = _cached_paths(upload_id)
-    sidecar.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    atomic_json.write_json(sidecar, payload, indent=None)
     return JSONResponse(payload)
 
 

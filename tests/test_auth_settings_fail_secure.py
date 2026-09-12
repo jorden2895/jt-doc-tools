@@ -111,11 +111,16 @@ def test_fresh_install_still_starts_with_auth_off(tmp_path, monkeypatch):
 
 
 def test_settings_are_flushed_to_disk(env):
-    """`save()` 要 fsync —— 斷電後不可以留下 0 bytes 的認證設定。
+    """認證設定要 fsync —— 斷電後不可以留下 0 bytes 的認證設定。
 
     直接驗行為：存完之後檔案要有內容且解析得出 `backend`。
     （fsync 本身在測試裡驗不到掉電，這裡守的是「不可以改回沒有落地保證的
     `write_text`」—— 那個寫法會讓內容與 rename 的順序沒有保證。）
+
+    **v1.15.34 起這段寫法搬到 `app/core/atomic_json.py`**（全站一份），所以
+    判準要跟著走一層：`save()` 要嘛自己 fsync，要嘛委派給那支 helper——
+    而那支 helper 自己一定要 fsync。只看 `save()` 的話，helper 裡的 fsync
+    被拿掉會照樣全綠。
     """
     data_dir, auth_settings = env
     p = data_dir / "auth_settings.json"
@@ -128,18 +133,37 @@ def test_settings_are_flushed_to_disk(env):
     import ast
     import inspect
 
-    tree = ast.parse(inspect.getsource(auth_settings.save).lstrip())
-    # **要認出「fsync 的是剛寫的那個檔」**。只比對有沒有 `os.fsync` 不夠 ——
-    # 同一個函式裡還有一個給**目錄**用的 `os.fsync(dfd)`，把檔案那個拿掉、
-    # 只留目錄那個，寬鬆的比對照樣全綠（實測變異驗證沒抓到）。
-    # 判準：有一個 `os.fsync(...)`，而它的引數是某個東西的 `.fileno()`。
-    fsync_on_file = any(
-        isinstance(n, ast.Call)
-        and ast.unparse(n.func) == "os.fsync"
-        and n.args
-        and isinstance(n.args[0], ast.Call)
-        and ast.unparse(n.args[0].func).endswith(".fileno")
-        for n in ast.walk(tree))
-    assert fsync_on_file, (
-        "`save()` 沒有對寫出去的檔案本身呼叫 os.fsync —— ext4 延遲配置下，"
-        "斷電後可能留下 0 bytes 的認證設定檔，而那曾經等於「認證關閉」")
+    from app.core import atomic_json
+
+    def _fsyncs_a_file(fn) -> bool:
+        """函式體裡有沒有對「某個檔案描述子」呼叫 os.fsync。
+
+        **要認出「fsync 的是剛寫的那個檔」**。只比對有沒有 `os.fsync` 不夠 ——
+        同一支程式裡還有一個給**目錄**用的 `os.fsync(fd)`，把檔案那個拿掉、
+        只留目錄那個，寬鬆的比對照樣全綠（實測變異驗證沒抓到）。
+        判準：`os.fsync(...)` 的引數是某個東西的 `.fileno()`。
+        """
+        tree = ast.parse(inspect.getsource(fn).lstrip())
+        return any(
+            isinstance(n, ast.Call)
+            and ast.unparse(n.func) == "os.fsync"
+            and n.args
+            and isinstance(n.args[0], ast.Call)
+            and ast.unparse(n.args[0].func).endswith(".fileno")
+            for n in ast.walk(tree))
+
+    def _delegates_to_helper(fn) -> bool:
+        tree = ast.parse(inspect.getsource(fn).lstrip())
+        return any(isinstance(n, ast.Call)
+                   and ast.unparse(n.func).endswith("atomic_json.write_json")
+                   for n in ast.walk(tree))
+
+    assert _fsyncs_a_file(auth_settings.save) or _delegates_to_helper(auth_settings.save), (
+        "`save()` 既沒有自己 fsync、也沒有走 atomic_json.write_json —— "
+        "ext4 延遲配置下，斷電後可能留下 0 bytes 的認證設定檔，"
+        "而那曾經等於「認證關閉」")
+
+    # 委派出去就要驗**被委派的那一支**真的有落地保證，否則這條守門等於斷線。
+    assert _fsyncs_a_file(atomic_json.write_text), (
+        "`atomic_json.write_text()` 沒有對寫出去的檔案呼叫 os.fsync —— "
+        "全站的設定檔都靠這一支，這裡漏掉等於每一支都漏掉")

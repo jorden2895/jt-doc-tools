@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from ...config import settings
+from ...core import atomic_json
 
 
 def _root() -> Path:
@@ -55,9 +56,7 @@ def load_entities(user_key: str) -> list[dict]:
 def save_entities(user_key: str, entities: list[dict]) -> None:
     f = _path_for(user_key)
     payload = {"entities": entities, "updated_at": time.time()}
-    tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(f)
+    atomic_json.write_json(f, payload)
 
 
 def add_entity(user_key: str, entity: dict) -> dict:

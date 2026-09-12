@@ -22,6 +22,7 @@ import shutil
 import threading
 import time
 from pathlib import Path
+from . import atomic_json
 from typing import Any
 
 from . import audit_db, db, history_manager, sessions
@@ -90,16 +91,7 @@ def save(new: dict[str, Any]) -> None:
                     raise ValueError(f"{k} 必須是數字")
                 merged[k] = int(v)
         merged["updated_at"] = time.time()
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(p)
+        atomic_json.write_json(_path(), merged, mode=0o600)
         _CACHE = merged
 
 

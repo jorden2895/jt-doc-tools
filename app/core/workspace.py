@@ -29,6 +29,8 @@ import shutil
 import threading
 import time
 import uuid
+
+from . import atomic_json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -103,16 +105,7 @@ def save_settings(new: dict[str, Any]) -> dict[str, Any]:
                     raise ValueError(f"{k} 必須是數字")
                 merged[k] = int(v)
         merged["updated_at"] = time.time()
-        p = _settings_path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(p)
+        atomic_json.write_json(_settings_path(), merged, mode=0o600)
         _CACHE = merged
         return json.loads(json.dumps(merged))
 
@@ -455,8 +448,7 @@ def save_bytes_for_key(key: str, data: bytes, display_name: str,
         "saved_at": time.time(),
         "user_label": user_label,
     }
-    _meta_path(d).write_text(json.dumps(meta, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
+    atomic_json.write_json(_meta_path(d), meta)
     return meta
 
 
@@ -663,8 +655,7 @@ def rename_file(request: Request, file_id: str, new_name: str) -> dict[str, Any]
     d = _entry_dir(request, file_id)
     meta = _read_meta(d) or {}
     meta["name"] = _clean_display_name(new_name, meta.get("ext", ""))
-    _meta_path(d).write_text(json.dumps(meta, ensure_ascii=False, indent=2),
-                             encoding="utf-8")
+    atomic_json.write_json(_meta_path(d), meta)
     return meta
 
 

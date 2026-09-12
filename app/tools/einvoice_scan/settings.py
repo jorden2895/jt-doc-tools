@@ -14,13 +14,12 @@ seed 列表用。
 from __future__ import annotations
 
 import json
-import os
-import secrets
 import threading
 from pathlib import Path
 from typing import Any, Optional
 
 from ...config import settings as app_settings
+from ...core import atomic_json
 from . import buffer  # 重用 _user_key + _get_lock pattern
 
 # 完整欄位定義 — id / label / default_visible / default_order + 可選 formats。
@@ -318,20 +317,7 @@ def get_settings(user: Optional[Any]) -> dict:
 def _write_settings_atomic(path: Path, key: str, data: dict) -> None:
     """Atomic write helper — 給 migration / update_settings 共用。"""
     with buffer._get_lock(f"settings:{key}"):
-        tmp = path.with_suffix(f".tmp-{secrets.token_hex(4)}")
-        try:
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            try:
-                with tmp.open("rb") as f:
-                    os.fsync(f.fileno())
-            except (OSError, AttributeError):
-                pass
-            tmp.replace(path)
-        finally:
-            try:
-                tmp.unlink(missing_ok=True)
-            except Exception:
-                pass
+        atomic_json.write_json(path, data)
 
 
 def update_settings(user: Optional[Any], payload: dict) -> dict:
@@ -412,22 +398,7 @@ def update_settings(user: Optional[Any], payload: dict) -> dict:
     path = _settings_path(user)
     key = buffer._user_key(user)
     with buffer._get_lock(f"settings:{key}"):
-        # Atomic write 同 buffer 模式
-        tmp = path.with_suffix(f".tmp-{secrets.token_hex(4)}")
-        try:
-            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            try:
-                with tmp.open("rb") as f:
-                    os.fsync(f.fileno())
-            except (OSError, AttributeError):
-                pass
-            tmp.replace(path)
-        finally:
-            if tmp.exists():
-                try:
-                    tmp.unlink()
-                except OSError:
-                    pass
+        atomic_json.write_json(path, data)
     return data
 
 

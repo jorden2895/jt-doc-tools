@@ -746,6 +746,9 @@ curl -X POST http://localhost:8765/tools/scan-merge/api/scan-merge \
 
 回應：單張 A4 白底 PDF 二進位。
 
+**每一份都偵測不到內容區塊時回 `422`**（例如整張全白、或掃描時蓋子沒關的純黑）。
+那不是請求格式的問題，而是「送進來的圖裡沒有東西可以拼」—— 訊息會說清楚是哪一種。
+
 ---
 
 ## 5. PDF 擷取與分析 API
@@ -1763,10 +1766,30 @@ curl -X POST http://localhost:8765/admin/api/llm/settings \
 POST /admin/api/llm/test-connection
 ```
 
+| 參數 | 類型 | 必填 | 說明 |
+|---|---|---|---|
+| `base_url` | str | | 要測的位址。**不給就測目前已存檔的設定** |
+| `api_key` | str | | 同上，不給就用已存檔的 |
+| `timeout_seconds` | num | | 上限 30 秒（管理頁不能卡住） |
+
+JSON body。管理頁的「測試連線」按鈕會把**還沒存檔**的那組設定帶進來；
+命令列只想確認「現在這組通不通」時整個 body 都可以省略。
+
 ```bash
+# 測目前存檔的設定
 curl -X POST http://localhost:8765/admin/api/llm/test-connection \
   -H "Authorization: Bearer ADMIN_TOKEN" | jq
+# → {"ok": true, "latency_ms": 42, "error": null, "models": [...]}
+
+# 測一組還沒存的設定
+curl -X POST http://localhost:8765/admin/api/llm/test-connection \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"base_url": "http://10.0.0.5:11434/v1"}' | jq
 ```
+
+連不上時**回 200**、`ok: false` 加 `error` —— 「我們測不到對方」不是
+這個請求本身失敗。
 
 ### 抓 LLM 模型清單
 

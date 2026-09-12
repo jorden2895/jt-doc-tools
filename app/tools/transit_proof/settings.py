@@ -14,6 +14,8 @@ import threading
 from pathlib import Path
 from typing import Any, Optional
 
+from ...core import atomic_json
+
 _AMOUNT_FORMATS = {
     "default": "plain",
     "options": [
@@ -222,8 +224,5 @@ def save_settings(user: Optional[Any], new: dict) -> dict:
                                 if k in VALID_FIELD_IDS and isinstance(v, str) and v.strip()}
     path = _settings_path(user)
     with _get_lock(_user_key(user)):
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        atomic_json.write_json(path, cur)
     return cur

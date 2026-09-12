@@ -47,6 +47,7 @@ import os
 import platform
 import threading
 from pathlib import Path
+from . import atomic_json
 from typing import Any, Optional
 
 logger = logging.getLogger("app.concurrency")
@@ -277,12 +278,7 @@ def save(new: dict) -> dict:
     if "reserve_mb" in new:
         cfg["reserve_mb"] = _clamp(new["reserve_mb"], 128, 8192)
     with _LOCK:
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        tmp.replace(p)
+        atomic_json.write_json(_path(), cfg)
         _CACHE = cfg
     apply()
     return dict(cfg)

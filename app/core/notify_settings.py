@@ -29,10 +29,10 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import os
 import threading
 import time
 from pathlib import Path
+from . import atomic_json
 from typing import Any, Optional
 
 logger = logging.getLogger("app.notify_settings")
@@ -234,16 +234,7 @@ def save(new: dict) -> dict:
                 else:
                     tgt[field] = str(val or "")
         cfg["updated_at"] = time.time()
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(cfg, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        try:
-            os.chmod(tmp, 0o600)      # 內含憑證
-        except OSError:
-            pass
-        tmp.replace(p)
+        atomic_json.write_json(_path(), cfg, mode=0o600)   # 內含憑證
         _CACHE = cfg
     return get()
 
@@ -371,11 +362,7 @@ def save_prefs(key: str, new: dict) -> dict:
             pass
     d = _prefs_dir()
     d.mkdir(parents=True, exist_ok=True)
-    p = _pref_path(key)
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cur, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    tmp.replace(p)
+    atomic_json.write_json(_pref_path(key), cur)
     return cur
 
 

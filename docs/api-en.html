@@ -631,6 +631,7 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
   <span class="hl-flag">-F</span> <span class="hl-str">&quot;whiten=true&quot;</span> \
   <span class="hl-flag">--output</span> id-merged.pdf</code></pre>
 <p>Response: a single white A4 PDF binary.</p>
+<p><strong>Returns <code>422</code> when none of the files has a detectable content block</strong> (an all-white page, say, or an all-black one from scanning with the lid open). That is not a problem with the request format: there is nothing in the images to assemble, and the message says which case it is.</p>
 <hr>
       </section>
       <section class="doc-section" data-sec="pdf-文字擷取" data-title="Extract PDF text" hidden>
@@ -1196,8 +1197,19 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
 <div class="doc-crumb">11. Administration API</div>
 <h4 id="測試-llm-連線">Test the LLM connection</h4>
 <pre><code class="lang-text"><span class="hl-method">POST</span> /admin/api/llm/test-connection</code></pre>
-<pre><code class="lang-bash">curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
-  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> | jq</code></pre>
+<div class="table-wrap"><table><thead><tr><th>Parameter</th><th>Type</th><th>Required</th><th>Description</th></tr></thead><tbody><tr><td><code>base_url</code></td><td>str</td><td></td><td>The address to test. <strong>Omit it and the saved settings are tested instead</strong></td></tr><tr><td><code>api_key</code></td><td>str</td><td></td><td>Same; omit it and the saved key is used</td></tr><tr><td><code>timeout_seconds</code></td><td>num</td><td></td><td>Capped at 30 seconds, so the admin page cannot hang</td></tr></tbody></table></div>
+<p>A JSON body. The admin page’s "Test connection" button sends the settings that are <strong>not saved yet</strong>; from the command line, when you only want to know whether the current settings work, the whole body can be omitted.</p>
+<pre><code class="lang-bash"><span class="hl-cmt"># 測目前存檔的設定</span>
+curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> | jq
+<span class="hl-cmt"># → {&quot;ok&quot;: true, &quot;latency_ms&quot;: 42, &quot;error&quot;: null, &quot;models&quot;: [...]}</span>
+
+<span class="hl-cmt"># 測一組還沒存的設定</span>
+curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Content-Type: application/json&quot;</span> \
+  <span class="hl-flag">-d</span> <span class="hl-str">&#x27;{&quot;base_url&quot;: &quot;http://10.0.0.5:11434/v1&quot;}&#x27;</span> | jq</code></pre>
+<p>When the connection fails it still <strong>returns 200</strong>, with <code>ok: false</code> and an <code>error</code> message; being unable to reach the server is not a failure of this request itself.</p>
       </section>
       <section class="doc-section" data-sec="抓-llm-模型清單" data-title="Fetch the LLM model list" hidden>
 <div class="doc-crumb">11. Administration API</div>

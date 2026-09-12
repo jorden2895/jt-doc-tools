@@ -20,6 +20,7 @@ import json
 import logging
 import threading
 import time
+from . import atomic_json
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -109,11 +110,7 @@ def _patch(patch: dict[str, Any]) -> None:
 def _write(data: dict[str, Any]) -> None:
     p = _path()
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                       encoding="utf-8")
-        tmp.replace(p)
+        atomic_json.write_json(p, data)
     except Exception:  # noqa: BLE001
         logger.exception("failed to persist directory_sync settings")
 

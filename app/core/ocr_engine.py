@@ -19,6 +19,8 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+from . import atomic_json
+
 log = logging.getLogger(__name__)
 
 # 兩引擎之間的語言碼對應 — tesseract code → easyocr code
@@ -73,8 +75,7 @@ def set_default_engine(engine: str) -> bool:
             except Exception:
                 d = {}
         d["engine"] = engine
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_json.write_json(p, d)
         return True
     except Exception as e:
         log.warning("set_default_engine failed: %s", e)

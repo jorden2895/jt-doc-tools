@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from . import atomic_json
 from ..config import settings
 
 
@@ -201,9 +202,7 @@ class ProfileManager:
         return self._read_raw()
 
     def _write(self, data: dict) -> None:
-        self._path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        atomic_json.write_json(self._path, data)
 
     # ---- Companies ----
     def list_companies(self) -> list[dict]:

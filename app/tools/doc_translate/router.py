@@ -27,6 +27,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from ...config import settings
 from ...core import office_convert, office_text_map as otm, pdf_preview
 from ...core import translation_glossary as _gloss
+from ...core import atomic_json
 from ...core import safe_paths as _sp, upload_owner as _uo
 from ...core.http_utils import content_disposition
 from ...core.job_manager import job_manager
@@ -222,11 +223,11 @@ async def upload(request: Request, file: UploadFile = File(...)):
         raise HTTPException(
             400, f"段落太多（{len(units)}，上限 {cap}）—— 請先拆成幾份再翻。")
 
-    _meta_path(upload_id).write_text(json.dumps({
+    atomic_json.write_json(_meta_path(upload_id), {
         "filename": name, "ext": ext, "work_ext": work_ext,
         "units": len(units),
         "chars": sum(len(u.text) for u in units),
-    }, ensure_ascii=False), encoding="utf-8")
+    })
     return {
         "upload_id": upload_id,
         "filename": name,

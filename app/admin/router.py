@@ -27,6 +27,7 @@ from ..core.conv_settings import BUILTIN_PATHS, conv_settings
 from ..core.profile_manager import profile_manager
 from ..core.synonym_manager import synonym_manager
 from ..core import translation_glossary as _tg
+from ..core import atomic_json
 from ..core.template_manager import template_manager
 from ..web.deps import require_admin
 
@@ -274,9 +275,7 @@ def build_router(templates) -> APIRouter:
             existing_ids.add(new_id)
             added += 1
 
-        _s.assets_meta_path.write_text(
-            json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        atomic_json.write_json(_s.assets_meta_path, existing)
         return {"ok": True, "mode": mode, "added": added,
                 "total": len(existing["assets"])}
 
@@ -870,13 +869,28 @@ def build_router(templates) -> APIRouter:
 
     @router.post("/api/llm/test-connection")
     async def api_llm_test_connection(request: Request):
-        """Test arbitrary settings (not yet saved). Used by the admin page's
-        「測試連線」button."""
+        """測試 LLM 連線。
+
+        管理頁的「測試連線」按鈕送的是**還沒存檔**的那組設定（所以要收 body）。
+        但**沒有 body 時要退回已存檔的設定** —— 從命令列問「我的 LLM 通不通」
+        的人不會知道要自己把 base_url 抄一遍，而 `await request.json()` 對空
+        body 會丟例外，一路變成 `400 Invalid JSON body`：一個看起來像
+        「你送錯東西」的錯誤，其實是我們的文件沒寫參數（v1.15.34 照 API.md
+        逐條實跑時抓到）。
+        """
         from ..core.llm_client import LLMClient
-        body = await request.json()
-        base_url = (body.get("base_url") or "").strip()
-        api_key = (body.get("api_key") or "").strip() or None
-        timeout = float(body.get("timeout_seconds") or 10)
+        from ..core.llm_settings import llm_settings
+        try:
+            body = await request.json()
+        except Exception:      # noqa: BLE001 — 空 body / 非 JSON 都退回存檔值
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        saved = llm_settings.get() if not body.get("base_url") else {}
+        base_url = ((body.get("base_url") or saved.get("base_url") or "")).strip()
+        api_key = ((body.get("api_key") or saved.get("api_key") or "")).strip() or None
+        timeout = float(body.get("timeout_seconds")
+                        or saved.get("timeout_seconds") or 10)
         if not base_url:
             return {"ok": False, "error": "Base URL 未填"}
         # Cap test timeout at 30s so admin page doesn't hang

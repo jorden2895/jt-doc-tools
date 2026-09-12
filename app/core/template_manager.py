@@ -27,6 +27,7 @@ from typing import Optional
 
 import fitz  # PyMuPDF
 
+from . import atomic_json
 from ..config import settings
 
 
@@ -99,9 +100,7 @@ class TemplateManager:
         return json.loads(self._path.read_text(encoding="utf-8"))
 
     def _write(self, data: dict) -> None:
-        self._path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        atomic_json.write_json(self._path, data)
 
     def list_all(self) -> list[dict]:
         with self._lock:

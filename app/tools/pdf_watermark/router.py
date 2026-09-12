@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from ...config import settings
 from ...core.asset_manager import asset_manager
 from ...core.job_manager import job_manager
-from ...core import pdf_preview
+from ...core import atomic_json, pdf_preview
 from . import service
 
 router = APIRouter()
@@ -384,7 +384,7 @@ async def batch_create(
         "params": params, "page_mode": page_mode, "asset_id": asset_id,
         "actor": actor, "wm_name": wm_name,
     }
-    (bdir / "_meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    atomic_json.write_json(bdir / "_meta.json", meta, indent=None)
     try:
         from ...core import upload_owner
         upload_owner.record(batch_id, request)

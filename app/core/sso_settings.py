@@ -20,12 +20,12 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
+from . import atomic_json
 from ..config import settings
 from ..logging_setup import get_logger
 
@@ -175,15 +175,7 @@ def save(new_settings: dict[str, Any]) -> None:
         _deep_merge(merged, current)
         _deep_merge(merged, incoming)
         merged["updated_at"] = time.time()
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-        try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(p)
+        atomic_json.write_json(_path(), merged, mode=0o600)
         _CACHE = merged
 
 

@@ -209,6 +209,23 @@ def test_every_non_api_endpoint_appears_in_the_plan():
         + "\n請補進 TEST_PLAN.md §4.7（每一支都要寫得出「怎麼知道它真的做對了」）。")
 
 
+def test_the_non_api_count_in_the_plan_is_current():
+    """§4.7 那個「共 N 支」會過期 —— 而且**只有它自己會說謊**。
+
+    實際比對之後發現它寫 267、實際 265（v1.15.34）。這個專案一再出現同一種
+    病：文件裡的數字改對了、東西沒跟上，或者東西變了、數字沒跟上
+    （工具總數、背景作業數、LLM 卡片數都踩過）。所以判準一律是
+    **實算 vs 文件**，不是驗數字字面。
+    """
+    import re
+    text = _plan_text()
+    m = re.search(r"共 \*\*(\d+) 支\*\*（工具首頁不列", text)
+    assert m, "§4.7 結尾那句「共 N 支」的格式變了，這條檢查要跟著改"
+    actual = len(_non_api_paths())
+    assert int(m.group(1)) == actual, (
+        f"TEST_PLAN §4.7 寫 {m.group(1)} 支，實算 {actual} 支")
+
+
 # ---------------------------------------------------------------------------
 # 測試檔本身（§1.99）
 #

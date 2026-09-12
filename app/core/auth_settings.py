@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from . import atomic_json
 from . import auth_db, audit_db, db, passwords, permissions, roles
 
 logger = logging.getLogger(__name__)
@@ -184,31 +185,14 @@ def save(new_settings: dict[str, Any]) -> None:
         merged = json.loads(json.dumps(_DEFAULTS))
         _deep_merge(merged, new_settings)
         merged["updated_at"] = time.time()
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
         # **一定要 fsync 再 rename**。ext4 的延遲配置會讓「rename 已完成、
         # 內容還沒落地」成為可能 —— 斷電或 VM 硬重置之後那個檔就是 **0 bytes**，
         # 而 0 bytes 的認證設定曾經等於「認證關閉」（v1.14.31 對抗式驗證）。
         # 現在讀取端已經 fail-secure，這裡是把根因也堵掉。
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(merged, fh, ensure_ascii=False, indent=2)
-            fh.flush()
-            os.fsync(fh.fileno())
-        try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(p)
-        # 目錄項本身也要落地，否則 rename 可能在當機後消失
-        try:
-            dfd = os.open(str(p.parent), os.O_RDONLY)
-            try:
-                os.fsync(dfd)
-            finally:
-                os.close(dfd)
-        except Exception:  # noqa: BLE001 — Windows 不支援目錄 fsync
-            pass
+        #
+        # 這段寫法就是 `atomic_json` 的來源（v1.15.34 收成全站一份）——
+        # 含檔案 fsync、權限設在暫存檔上、換過去之後再 fsync 目錄。
+        atomic_json.write_json(_path(), merged, mode=0o600)
         _CACHE = merged
 
 

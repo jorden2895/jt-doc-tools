@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ...config import settings
+from ...core import atomic_json
 
 
 CASE_ID_RE = re.compile(r"^[a-f0-9]{32}$")
@@ -97,9 +98,7 @@ def save_case(case: dict) -> None:
     cdir = case_dir(case["case_id"])
     cdir.mkdir(parents=True, exist_ok=True)
     f = cdir / "case.json"
-    tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(f)
+    atomic_json.write_json(f, case)
 
 
 def add_file_to_case(case: dict, file_id: str, original_name: str,
@@ -216,9 +215,7 @@ def version_dir(case_id: str, version: str) -> Path:
 def save_version_report(case_id: str, version: str, report: dict) -> None:
     vdir = version_dir(case_id, version)
     f = vdir / "report.json"
-    tmp = f.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(f)
+    atomic_json.write_json(f, report)
 
 
 def load_version_report(case_id: str, version: str) -> Optional[dict]:

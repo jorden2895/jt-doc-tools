@@ -631,6 +631,7 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
   <span class="hl-flag">-F</span> <span class="hl-str">&quot;whiten=true&quot;</span> \
   <span class="hl-flag">--output</span> id-merged.pdf</code></pre>
 <p>回應：單張 A4 白底 PDF 二進位。</p>
+<p><strong>每一份都偵測不到內容區塊時回 <code>422</code></strong>（例如整張全白、或掃描時蓋子沒關的純黑）。 那不是請求格式的問題，而是「送進來的圖裡沒有東西可以拼」—— 訊息會說清楚是哪一種。</p>
 <hr>
       </section>
       <section class="doc-section" data-sec="pdf-文字擷取" data-title="PDF 文字擷取" hidden>
@@ -1196,8 +1197,19 @@ curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span c
 <div class="doc-crumb">11. 管理端 API</div>
 <h4 id="測試-llm-連線">測試 LLM 連線</h4>
 <pre><code class="lang-text"><span class="hl-method">POST</span> /admin/api/llm/test-connection</code></pre>
-<pre><code class="lang-bash">curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
-  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> | jq</code></pre>
+<div class="table-wrap"><table><thead><tr><th>參數</th><th>類型</th><th>必填</th><th>說明</th></tr></thead><tbody><tr><td><code>base_url</code></td><td>str</td><td></td><td>要測的位址。<strong>不給就測目前已存檔的設定</strong></td></tr><tr><td><code>api_key</code></td><td>str</td><td></td><td>同上，不給就用已存檔的</td></tr><tr><td><code>timeout_seconds</code></td><td>num</td><td></td><td>上限 30 秒（管理頁不能卡住）</td></tr></tbody></table></div>
+<p>JSON body。管理頁的「測試連線」按鈕會把<strong>還沒存檔</strong>的那組設定帶進來； 命令列只想確認「現在這組通不通」時整個 body 都可以省略。</p>
+<pre><code class="lang-bash"><span class="hl-cmt"># 測目前存檔的設定</span>
+curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> | jq
+<span class="hl-cmt"># → {&quot;ok&quot;: true, &quot;latency_ms&quot;: 42, &quot;error&quot;: null, &quot;models&quot;: [...]}</span>
+
+<span class="hl-cmt"># 測一組還沒存的設定</span>
+curl <span class="hl-flag">-X</span> <span class="hl-method">POST</span> <span class="hl-url">http://localhost:8765/admin/api/llm/test-connection</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Authorization: Bearer ADMIN_TOKEN&quot;</span> \
+  <span class="hl-flag">-H</span> <span class="hl-str">&quot;Content-Type: application/json&quot;</span> \
+  <span class="hl-flag">-d</span> <span class="hl-str">&#x27;{&quot;base_url&quot;: &quot;http://10.0.0.5:11434/v1&quot;}&#x27;</span> | jq</code></pre>
+<p>連不上時<strong>回 200</strong>、<code>ok: false</code> 加 <code>error</code> —— 「我們測不到對方」不是 這個請求本身失敗。</p>
       </section>
       <section class="doc-section" data-sec="抓-llm-模型清單" data-title="抓 LLM 模型清單" hidden>
 <div class="doc-crumb">11. 管理端 API</div>

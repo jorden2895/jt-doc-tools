@@ -14,6 +14,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 
 from ...config import settings
+from ...core import atomic_json
 from ...core.http_utils import content_disposition
 
 # Reuse type label map + reader from sibling tool to avoid duplication.
@@ -103,7 +104,7 @@ async def analyze(request: Request, file: UploadFile = File(...)):
             "by_author":  [{"author": k, "count": v}
                            for k, v in by_author.most_common()],
         }
-        sidecar.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        atomic_json.write_json(sidecar, payload, indent=None)
         return JSONResponse(payload)
     except Exception:
         src.unlink(missing_ok=True)

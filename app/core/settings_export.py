@@ -28,7 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-from . import safe_paths
+from . import atomic_json, safe_paths
 from ..config import settings
 
 MANIFEST_NAME = "manifest.json"
@@ -215,12 +215,7 @@ def _rekey_after_import(target: Path) -> None:
     for holder, field in locate(data):
         if holder and holder.get(field):
             holder[field] = mod.encrypt_secret(holder[field])
-    target.write_text(json.dumps(data, ensure_ascii=False, indent=2),
-                      encoding="utf-8")
-    try:
-        target.chmod(0o600)
-    except OSError:      # Windows / 不支援 chmod 的檔案系統
-        pass
+    atomic_json.write_json(target, data, mode=0o600)
 
 
 # 舊名保留，既有測試與呼叫端仍可用

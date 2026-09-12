@@ -19,6 +19,8 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Optional
 
+from . import atomic_json
+
 log = logging.getLogger(__name__)
 
 
@@ -153,8 +155,7 @@ def _load_disk_cache() -> dict:
 def _save_disk_cache(cache: dict) -> None:
     p = _profile_cache_path()
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+        atomic_json.write_json(p, cache)
     except Exception as e:
         log.warning("save llm_model_profiles cache failed: %s", e)
 

@@ -14,6 +14,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+from . import atomic_json
 from ..config import settings
 
 
@@ -83,10 +84,7 @@ class _ConvSettings:
             return self._initial()
 
     def _write(self, data: dict) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        atomic_json.write_json(self._path, data)
 
     # ---- public API ----
     def list_paths(self) -> list[dict]:

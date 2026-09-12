@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from . import atomic_json
 from ..config import settings
 
 
@@ -70,9 +71,7 @@ class HistoryManager:
             }
             if extra:
                 meta["extra"] = extra
-            (d / "meta.json").write_text(
-                json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
+            atomic_json.write_json(d / "meta.json", meta)
             return meta
 
     def list_all(self) -> list[dict]:

@@ -18,11 +18,11 @@ processes them in-memory).
 from __future__ import annotations
 
 import json
-import os
 import threading
 from pathlib import Path
 from typing import Any
 
+from . import atomic_json
 from ..config import settings
 
 _LOCK = threading.RLock()
@@ -52,14 +52,9 @@ def _load() -> dict[str, Any]:
 
 
 def _save(d: dict[str, Any]) -> None:
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, _FILE)
-    try:
-        os.chmod(_FILE, 0o600)  # token sensitive
-    except Exception:
-        pass
+    # 權限設在暫存檔上（helper 負責）—— 原本是 replace 之後才 chmod，
+    # 那中間有一瞬間這個含 token 的檔案是 0644。
+    atomic_json.write_json(_FILE, d, mode=0o600)
 
 
 def get() -> dict[str, Any]:

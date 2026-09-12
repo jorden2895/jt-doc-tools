@@ -397,6 +397,46 @@ def ensure_readable(src: Path) -> None:
         raise OfficeSourceError(f"檔案讀不到：{e}") from e
 
 
+
+def _require_output(produced: Path, *, rc, stdout: bytes, stderr: bytes,
+                    what: str, missing_hint: str = "") -> Path:
+    """**先看產出、再看回傳碼** —— soffice 的離開碼不可靠。
+
+    它可能一邊印無關的警告（`javaldx` 找不到 Java）一邊正常轉完，也可能在
+    收尾階段才被中止。真正的判準是「有沒有拿到一份可用的檔案」；反過來先看
+    回傳碼的話，**會把已經轉好的檔案白白丟掉，還告訴使用者「轉檔失敗」**，
+    而訊息內容是那個無關的 Java 警告 —— 使用者會跑去裝 Java。
+
+    這條規則 v1.14.46 就寫在 `convert_with_filter` 的註解裡，但**只有那一支
+    照做**。v1.15.34 用一支「產出檔照寫、離開碼回 1」的假 soffice 實測：
+    另外六支全部丟例外，只有 `convert_with_filter` 成功 —— 所以判準收成這一支，
+    六支都改走它。
+
+    拿不到可用產出時才丟 `RuntimeError`，而且**訊息要指向對的方向**：
+    空檔案（來源毀損）、被訊號中止（記憶體 / 併行太多）、其他（附上 soffice
+    自己說的話）三種分開講。
+    """
+    if produced.exists() and produced.stat().st_size > 0:
+        return produced
+    out = ((stderr or b"").decode("utf-8", "replace")
+           + (stdout or b"").decode("utf-8", "replace")).strip()
+    if produced.exists():
+        raise RuntimeError(
+            f"{what} 產生的是空檔案（{produced.name}）。來源檔可能已毀損，"
+            "或這個輸出格式不支援來源的內容。")
+    if rc is not None and (rc < 0 or rc >= 128):
+        sig = -rc if rc < 0 else rc - 128
+        raise RuntimeError(
+            f"{what} 被訊號 {sig} 中止。多半是記憶體不足，或同時有太多轉檔在跑"
+            " —— 跟來源檔、目標格式都無關，等一下再試。")
+    msg = f"{what} 失敗"
+    if missing_hint:
+        msg += f"。{missing_hint}"
+    if out:
+        msg += f"：{out[:500]}"
+    raise RuntimeError(msg)
+
+
 def convert_to_pdf(src: Path, dst_pdf: Path, timeout: float = 60.0) -> None:
     """Run soffice headless to convert ``src`` into ``dst_pdf``.
 
@@ -467,13 +507,10 @@ def convert_to_pdf(src: Path, dst_pdf: Path, timeout: float = 60.0) -> None:
                     f"含有 LibreOffice/OxOffice 無法解析的內容。請用 Word/Pages 另存"
                     f"一份乾淨的版本再試，或直接請對方提供 PDF 版。"
                 )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"office 轉 PDF 失敗：{stderr.decode('utf-8', 'replace') or stdout.decode('utf-8', 'replace')}"
-                )
-        produced = Path(td) / (src.stem + ".pdf")
-        if not produced.exists():
-            raise RuntimeError("轉檔成功但找不到輸出檔")
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".pdf"), rc=rc, stdout=stdout, stderr=stderr,
+            what="office 轉 PDF")
         dst_pdf.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(dst_pdf))
 
@@ -531,14 +568,10 @@ def convert_to_odg(src: Path, dst_odg: Path, timeout: float = 120.0) -> None:
                     f"PDF 匯入 Draw 卡住（超過 {int(timeout)} 秒）。這份 PDF 可能已毀損"
                     f"或含 LibreOffice/OxOffice 無法解析的內容。"
                 )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    "PDF 匯入 Draw 失敗（可能缺 LibreOffice-draw 模組）："
-                    + (stderr.decode("utf-8", "replace") or stdout.decode("utf-8", "replace"))
-                )
-        produced = Path(td) / (src.stem + ".odg")
-        if not produced.exists():
-            raise RuntimeError("PDF 匯入成功但找不到輸出的 .odg")
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".odg"), rc=rc, stdout=stdout, stderr=stderr,
+            what="PDF 匯入 Draw", missing_hint="可能缺 LibreOffice-draw 模組")
         dst_odg.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(dst_odg))
 
@@ -592,13 +625,10 @@ def convert_to_docx(src: Path, dst_docx: Path, timeout: float = 60.0,
                 raise RuntimeError(
                     f"office 轉 .docx 卡住（超過 {int(timeout)} 秒）。檔案可能已毀損或含 LibreOffice 無法解析的內容。"
                 )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"office 轉 .docx 失敗：{stderr.decode('utf-8', 'replace') or stdout.decode('utf-8', 'replace')}"
-                )
-        produced = Path(td) / (src.stem + ".docx")
-        if not produced.exists():
-            raise RuntimeError("轉檔成功但找不到輸出 .docx")
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".docx"), rc=rc, stdout=stdout, stderr=stderr,
+            what="office 轉 .docx")
         dst_docx.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(dst_docx))
 
@@ -647,16 +677,12 @@ def convert_to_pptx(src: Path, dst_pptx: Path, timeout: float = 120.0) -> None:
                     f"office 轉 .pptx 卡住（超過 {int(timeout)} 秒）。"
                     "簡報物件過多時會發生,可改輸出 .odp。"
                 )
-            if proc.returncode != 0:
-                err = (stderr.decode("utf-8", "replace")
-                       or stdout.decode("utf-8", "replace"))
-                raise RuntimeError(f"office 轉 .pptx 失敗：{err}")
-        produced = Path(td) / (src.stem + ".pptx")
-        if not produced.exists():
-            raise RuntimeError(
-                "轉檔成功但找不到輸出 .pptx。多半是 office 套件缺少 Impress 模組"
-                "（請安裝 oxoffice-impress 或 libreoffice-impress）。"
-            )
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".pptx"), rc=rc, stdout=stdout, stderr=stderr,
+            what="office 轉 .pptx",
+            missing_hint="多半是 office 套件缺少 Impress 模組"
+                         "（請安裝 oxoffice-impress 或 libreoffice-impress）")
         dst_pptx.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(dst_pptx))
 
@@ -713,13 +739,10 @@ def convert_to_odt(src: Path, dst_odt: Path, timeout: float = 60.0,
                 raise RuntimeError(
                     f"office 轉 .odt 卡住（超過 {int(timeout)} 秒）。"
                 )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"office 轉 .odt 失敗：{stderr.decode('utf-8', 'replace') or stdout.decode('utf-8', 'replace')}"
-                )
-        produced = Path(td) / (src.stem + ".odt")
-        if not produced.exists():
-            raise RuntimeError("轉檔成功但找不到輸出 .odt")
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".odt"), rc=rc, stdout=stdout, stderr=stderr,
+            what="office 轉 .odt")
         dst_odt.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(produced), str(dst_odt))
 
@@ -778,13 +801,10 @@ def convert_to_text(src: Path, timeout: float = 60.0) -> str:
                     f"office 轉文字卡住（超過 {int(timeout)} 秒）。"
                     "這份檔案可能已毀損或含有 LibreOffice/OxOffice 無法解析的內容。"
                 )
-            if proc.returncode != 0:
-                raise RuntimeError(
-                    f"office 轉文字失敗：{stderr.decode('utf-8', 'replace') or stdout.decode('utf-8', 'replace')}"
-                )
-        produced = Path(td) / (src.stem + ".txt")
-        if not produced.exists():
-            raise RuntimeError("轉檔成功但找不到輸出 .txt")
+            rc = proc.returncode
+        produced = _require_output(
+            Path(td) / (src.stem + ".txt"), rc=rc, stdout=stdout, stderr=stderr,
+            what="office 轉文字")
         # soffice writes UTF-8 (BOM-stripped); be tolerant of encoding hiccups.
         try:
             return produced.read_text(encoding="utf-8-sig")

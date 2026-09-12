@@ -347,7 +347,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 <!-- BEGIN test-index (由 tools/build_test_plan_index.py 產生，不要手改) -->
 
-共 **247 支測試檔**。說明取自每支檔案自己的開頭說明，
+共 **250 支測試檔**。說明取自每支檔案自己的開頭說明，
 跑 `python tools/build_test_plan_index.py` 重建。
 
 > 這裡**刻意不列函式數** —— 那個數字每加一條測試就會變，
@@ -368,6 +368,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_admin_users_table.py` | 使用者清單的欄位索引與排序型別要對得起來 |
 | `test_api_doc_contract.py` | API 文件契約回歸測試 |
 | `test_api_doc_coverage.py` | 每個工具的 API 都要在 `github/API.md` 與 `TEST_PLAN.md` §4 出現 |
+| `test_api_doc_examples_run.py` | 照 `github/API.md` 的 curl 範例實際呼叫 —— 抓「照文件呼叫卻壞」 |
 | `test_api_gate_and_csrf_edges.py` | API token 閘與 CSRF 豁免的邊界 |
 | `test_api_page_builder.py` | `github/build-api-page.py` 產出的 api.html 不可以毀損 |
 | `test_asset_image_acl.py` | ACL test for the login-gated shared-asset image endpoints (GitHub #28). |
@@ -486,6 +487,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_ocr_avx2_guard.py` | 本機 EasyOCR 在缺 AVX2 的 CPU 上會 SIGILL 打掛整個服務 |
 | `test_ocr_server_gpu_select.py` | Unit tests for jt-ocr-server's auto GPU selection (server_template.py). |
 | `test_office_convert.py` | 辦公文件格式互轉（office-convert） |
+| `test_office_convert_output_first.py` | soffice 的離開碼不可靠 —— 判準是「有沒有拿到可用的檔案」 |
 | `test_office_source_validation.py` | 辦公文件的**來源檔**壞掉時，要在送進 soffice 之前就擋下來 |
 | `test_online_sessions.py` | 在線人數、某人的登入裝置清單、強制登出 |
 | `test_open_redirect.py` | Open-redirect regression — closes CodeQL alerts #14 / #15 |
@@ -551,6 +553,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 | `test_seam_preview_speed.py` | 騎縫章預覽：只蓋要看的那一頁 |
 | `test_seed_bootstrap_gap.py` | 新工具要真的到得了**既有客戶**，不是只有全新安裝看得到 |
 | `test_sessions.py` | Tests for app.core.sessions (issue / lookup / revoke). |
+| `test_settings_atomic_write.py` | 設定檔一律原子寫入（`app/core/atomic_json.py`），不可以直接覆寫 |
 | `test_settings_export.py` | Category-based settings export / import (v1.12.54). |
 | `test_settings_export_roundtrip.py` | 設定備份：**匯出的檔案要匯得回去** |
 | `test_signpath_notes_are_private.py` | SignPath 的往來筆記不可以出現在公開版（v1.15.27） |
@@ -1501,15 +1504,6 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 
 ## 4.7 工具的非 API 端點 —— **畫面上實際打的那些** 🆕 v1.14.95
 
-- [ ] `/tools/doc-straighten/load` —— 上傳（PDF / 圖片 / 文書檔）；
-      回頁數與檔名。**壞檔要回 400 不可以 500**
-- [ ] `/tools/doc-straighten/thumb/{upload_id}/{page}` —— 原稿縮圖；
-      **別人的 upload_id 要 404**（歸屬檢查）
-- [ ] `/tools/doc-straighten/preview` —— 單頁修正預覽，回**修正角度與殘留角**；
-      頁碼超範圍要 404（不是 500）
-- [ ] `/tools/doc-straighten/preview-img/{upload_id}/{page}` —— 取預覽圖；
-      **不可以被快取**（換了選項要看到新的）
-- [ ] `/tools/doc-straighten/submit` —— 送出背景作業，回 `job_id`
 §4 只保證「每個工具至少一支 `/api/`」有驗收，§4.6 補了管理 / 作業 / 通知 API。
 **但使用者在畫面上按的每一顆按鈕，打的其實是這一層**（`analyze` / `preview` /
 `thumb` / `download` / `export-*` / 暫存區 CRUD）—— 而它們一條驗收都沒有。
@@ -1546,7 +1540,7 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 目前沒有自動化測試碰過，跑 `python tools/report_endpoint_test_coverage.py`，
 那份是**提示不是判決**。
 
-共 **267 支**（工具首頁不列，§2 已逐支驗收）。
+共 **265 支**（工具首頁不列，§2 已逐支驗收）。
 
 **全站（認證 / 帳號 / 工作區 / 介面語言）**
 
@@ -1601,6 +1595,18 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
 **doc-diff（文件差異比對）**
 
 - [ ] `POST /tools/doc-diff/compare`
+
+**doc-straighten（文件拉正）**
+
+- [ ] `/tools/doc-straighten/load` —— 上傳（PDF / 圖片 / 文書檔）；
+      回頁數與檔名。**壞檔要回 400 不可以 500**
+- [ ] `/tools/doc-straighten/thumb/{upload_id}/{page}` —— 原稿縮圖；
+      **別人的 upload_id 要 404**（歸屬檢查）
+- [ ] `/tools/doc-straighten/preview` —— 單頁修正預覽，回**修正角度與殘留角**；
+      頁碼超範圍要 404（不是 500）
+- [ ] `/tools/doc-straighten/preview-img/{upload_id}/{page}` —— 取預覽圖；
+      **不可以被快取**（換了選項要看到新的）
+- [ ] `/tools/doc-straighten/submit` —— 送出背景作業，回 `job_id`
 
 **doc-translate（文件翻譯）**
 
@@ -1990,7 +1996,14 @@ v1.12.0 的 `_m8` 就是這樣過關的：它重建 `users` 表時沒關外鍵�
    python tools/check_docs_tool_coverage.py        # 工具是否都寫進 README / 介紹站
    python tools/check_settings_export_coverage.py  # 新設定檔是否都納入「設定備份 / 匯入」
    python tools/check_version_consistency.py       # 五處版本號一致
+   python tools/api_doc_example_audit.py           # API.md 的每條 curl 實際打一遍
    ```
+   **最後那一支要看「要看的」是不是 0**（v1.15.34 起）。它把 `API.md` 裡的
+   每一條 curl 解析出來實際送一次 —— 既有的對照層守門只驗「端點有沒有寫進
+   文件」與挑出來那幾支的參數，**不會把整條指令送出去**。第一次跑就抓到
+   `/admin/api/llm/test-connection` 的範例沒帶 body 而端點回
+   `400 Invalid JSON body`（照文件做的人會以為是自己送錯）。
+   需要 soffice；輸出會把「素材 / 佔位值造成的」與「要看的」分開印。
    後者是 v1.14.6 補上的：`settings_export.CATEGORIES` 是**人工維護**的清單，加新設定
    檔漏加不會有任何錯誤訊息，只有客戶搬機還原後才會發現設定不見了（該版一次補了
    16 項，其中 `sso_settings.json` 從 v1.12.0 起就沒被備份過，而「認證設定」分類的
@@ -3056,6 +3069,10 @@ grep -rnE "192\.168\.|10\.[0-9]+\.[0-9]+\.[0-9]+|親測|OSSII 內部" \
 #### 6.19.6 守門測試（會自動跑，但發版前確認有過）
 
 - [ ] `tests/test_api_doc_coverage.py` —— 以實際路由表反查 `API.md` 與本檔 §4
+- [ ] `tests/test_api_doc_examples_run.py` —— 文件範例裡那條**不帶 body** 的
+      「測試 LLM 連線」要能用（v1.15.34 抓到的實例）
+- [ ] `tests/test_settings_atomic_write.py` —— 設定檔一律走 `atomic_json`；
+      例外清單自己不可以過期
 - [ ] `tests/test_api_page_builder.py` —— `api.html` 不可含 NUL；
       巢狀行內標記（粗體裡包程式碼）要完整還原
 - [ ] `tests/test_template_js_syntax.py` / `tests/test_csp_nonce.py`

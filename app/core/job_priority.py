@@ -36,6 +36,7 @@ import json
 import logging
 import threading
 from pathlib import Path
+from . import atomic_json
 from typing import Optional
 
 logger = logging.getLogger("app.job_priority")
@@ -126,12 +127,7 @@ def set_user_ids(ids) -> list[int]:
         if n > 0 and n not in clean:
             clean.append(n)
     clean = clean[:MAX_USERS]
-    p = _path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps({"user_ids": clean}, ensure_ascii=False, indent=2),
-                   encoding="utf-8")
-    tmp.replace(p)
+    atomic_json.write_json(_path(), {"user_ids": clean})
     global _CACHE
     with _LOCK:
         _CACHE = list(clean)

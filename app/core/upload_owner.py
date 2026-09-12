@@ -27,6 +27,7 @@ from typing import Optional
 from fastapi import HTTPException, Request
 
 from .safe_paths import is_uuid_hex
+from . import atomic_json
 
 
 def _owners_dir() -> Path:
@@ -78,8 +79,7 @@ def record(upload_id: str, request: Request) -> None:
         return
     try:
         f = _owners_dir() / f"{upload_id}.json"
-        f.write_text(json.dumps({"user_id": uid, "ts": time.time()}),
-                     encoding="utf-8")
+        atomic_json.write_json(f, {"user_id": uid, "ts": time.time()})
     except Exception:
         pass
 
@@ -213,8 +213,7 @@ def record_uid(upload_id: str, user_id: int) -> None:
         return
     try:
         f = _owners_dir() / f"{upload_id}.json"
-        f.write_text(json.dumps({"user_id": int(user_id), "ts": time.time()}),
-                     encoding="utf-8")
+        atomic_json.write_json(f, {"user_id": int(user_id), "ts": time.time()})
     except Exception:  # noqa: BLE001
         pass
 

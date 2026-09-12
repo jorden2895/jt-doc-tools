@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import threading
 import time
@@ -24,6 +23,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import safe_paths
+from . import atomic_json
 from ..config import settings
 
 logger = logging.getLogger(__name__)
@@ -113,15 +113,7 @@ def save_settings(new: dict[str, Any]) -> dict[str, Any]:
 def _write(d: dict[str, Any]) -> None:
     global _CACHE
     with _LOCK:
-        p = _path()
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
-        try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(p)
+        atomic_json.write_json(_path(), d, mode=0o600)
         _CACHE = d
 
 

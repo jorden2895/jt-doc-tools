@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ...core import atomic_json
+
 _MAX_ENTRIES_PER_USER = 2000
 
 _locks: dict[str, threading.Lock] = {}
@@ -102,10 +104,7 @@ def _read(path: Path) -> dict:
 
 
 def _write(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    atomic_json.write_json(path, data)
 
 
 def _dedup_key(e: dict) -> str:
